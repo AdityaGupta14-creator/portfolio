@@ -1,0 +1,218 @@
+import { create } from 'zustand';
+import { PORTFOLIO_CONTENT } from '../data/content';
+
+export type ThemeMode = 'day' | 'goldenEvening';
+export type ViewMode = '3d' | 'classic';
+
+export interface AppState {
+  // Theme & Atmosphere
+  theme: ThemeMode;
+  isGoldenEvening: boolean;
+  setTheme: (theme: ThemeMode) => void;
+  toggleTheme: () => void;
+
+  // View Mode: 3D vs. Accessible 2D
+  viewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
+  toggleViewMode: () => void;
+
+  // Performance Settings
+  isLowPerformanceMode: boolean;
+  dpr: number;
+  shadowsEnabled: boolean;
+  activateLowPerformanceMode: () => void;
+
+  // Guided Tour & Building State
+  currentBuilding: number | null; // Currently focused or nearest building (0..4, or null)
+  tourStep: number;               // Current tour step (0..4)
+  focusedBuildingIndex: number | null;
+  focusBuilding: (index: number) => void;
+  closeBuildingModal: (scrollToOverview?: boolean) => void;
+  stepBuilding: (delta: number) => void;
+
+  // Project master-detail selection
+  selectedProjectId: string | null;
+  setSelectedProjectId: (id: string | null) => void;
+
+  // Scroll choreography progress (0.0 to 1.0)
+  scrollProgress: number;
+  setScrollProgress: (progress: number) => void;
+
+  // Loading & intro states
+  isLoading: boolean;
+  loadProgress: number;
+  setIsLoading: (isLoading: boolean) => void;
+  setLoadProgress: (progress: number) => void;
+
+  // Mobile navigation overlay menu
+  isMobileMenuOpen: boolean;
+  setIsMobileMenuOpen: (open: boolean) => void;
+  toggleMobileMenu: () => void;
+
+  // Scroll navigation helpers
+  startStreetTour: () => void;
+  goToHub: () => void;
+  scrollToTopSky: () => void;
+
+  // Toast notifications
+  toastMessage: string | null;
+  showToast: (msg: string) => void;
+  clearToast: () => void;
+}
+
+const getInitialViewMode = (): ViewMode => {
+  if (typeof window === 'undefined') return '3d';
+  const saved = localStorage.getItem('portfolioViewMode') as ViewMode | null;
+  if (saved === '3d' || saved === 'classic') return saved;
+  // Auto-detect reduced-motion or low device memory (< 4GB)
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const deviceMemory = (navigator as unknown as { deviceMemory?: number }).deviceMemory;
+  if (prefersReducedMotion || (deviceMemory !== undefined && deviceMemory < 4)) {
+    return 'classic';
+  }
+  return '3d';
+};
+
+const getInitialDpr = (): number => {
+  if (typeof window === 'undefined') return 1;
+  return Math.min(window.devicePixelRatio || 1, 2);
+};
+
+export const useAppStore = create<AppState>((set, get) => ({
+  // Theme state
+  theme: 'day',
+  isGoldenEvening: false,
+  setTheme: (theme) => set({ theme, isGoldenEvening: theme === 'goldenEvening' }),
+  toggleTheme: () => {
+    const nextTheme: ThemeMode = get().theme === 'day' ? 'goldenEvening' : 'day';
+    set({ theme: nextTheme, isGoldenEvening: nextTheme === 'goldenEvening' });
+    get().showToast(
+      nextTheme === 'goldenEvening'
+        ? 'Switched to Warm Golden Evening Dusk Glow ✨'
+        : 'Switched to Classic Daylight Street View ☀️'
+    );
+  },
+
+  // View mode
+  viewMode: getInitialViewMode(),
+  setViewMode: (viewMode) => {
+    localStorage.setItem('portfolioViewMode', viewMode);
+    set({ viewMode });
+  },
+  toggleViewMode: () => {
+    const nextMode: ViewMode = get().viewMode === '3d' ? 'classic' : '3d';
+    localStorage.setItem('portfolioViewMode', nextMode);
+    set({ viewMode: nextMode });
+    get().showToast(`Switched to ${nextMode === '3d' ? 'Interactive 3D Avenue' : 'Accessible 2D Layout'}`);
+  },
+
+  // Performance settings
+  isLowPerformanceMode: false,
+  dpr: getInitialDpr(),
+  shadowsEnabled: true,
+  activateLowPerformanceMode: () => {
+    if (get().isLowPerformanceMode) return;
+    set({
+      isLowPerformanceMode: true,
+      dpr: 1,
+      shadowsEnabled: false,
+    });
+    get().showToast('Performance mode activated for smoother scrolling.');
+    console.warn('Performance mode active: Shadows disabled and DPR set to 1 due to FPS drop.');
+  },
+
+  // Tour & Buildings
+  currentBuilding: null,
+  tourStep: 0,
+  focusedBuildingIndex: null,
+  focusBuilding: (index: number) => {
+    set({
+      currentBuilding: index,
+      focusedBuildingIndex: index,
+      tourStep: index,
+      selectedProjectId: null,
+      isMobileMenuOpen: false,
+    });
+  },
+  closeBuildingModal: (scrollToOverview = false) => {
+    set({ focusedBuildingIndex: null, selectedProjectId: null });
+    if (scrollToOverview) {
+      get().goToHub();
+    }
+  },
+  stepBuilding: (delta: number) => {
+    const currentIndex = get().focusedBuildingIndex;
+    const total = PORTFOLIO_CONTENT.buildings.length;
+    if (currentIndex === null) {
+      get().focusBuilding(0);
+      return;
+    }
+    const nextIndex = (currentIndex + delta + total) % total;
+    get().focusBuilding(nextIndex);
+  },
+
+  selectedProjectId: null,
+  setSelectedProjectId: (selectedProjectId) => set({ selectedProjectId }),
+
+  // Scroll Progress
+  scrollProgress: 0,
+  setScrollProgress: (scrollProgress) => {
+    let currentStep = 0;
+    if (scrollProgress >= 0.22 && scrollProgress <= 0.90) {
+      const normalized = (scrollProgress - 0.22) / (0.90 - 0.22);
+      currentStep = Math.min(4, Math.max(0, Math.floor(normalized * 5)));
+    } else if (scrollProgress > 0.90) {
+      currentStep = 4;
+    }
+
+    set({
+      scrollProgress,
+      tourStep: currentStep,
+      currentBuilding: get().focusedBuildingIndex !== null ? get().focusedBuildingIndex : currentStep,
+    });
+  },
+
+  // Loading
+  isLoading: true,
+  loadProgress: 0,
+  setIsLoading: (isLoading) => set({ isLoading }),
+  setLoadProgress: (loadProgress) => set({ loadProgress }),
+
+  // Mobile Menu
+  isMobileMenuOpen: false,
+  setIsMobileMenuOpen: (isMobileMenuOpen) => set({ isMobileMenuOpen }),
+  toggleMobileMenu: () => set((state) => ({ isMobileMenuOpen: !state.isMobileMenuOpen })),
+
+  // Scroll Actions
+  startStreetTour: () => {
+    const track = document.getElementById('scroll-track');
+    const maxScroll = track
+      ? track.offsetHeight - window.innerHeight
+      : document.documentElement.scrollHeight - window.innerHeight;
+    window.scrollTo({ top: maxScroll * 0.28, behavior: 'smooth' });
+  },
+
+  goToHub: () => {
+    set({ focusedBuildingIndex: null, selectedProjectId: null });
+    const track = document.getElementById('scroll-track');
+    const maxScroll = track
+      ? track.offsetHeight - window.innerHeight
+      : document.documentElement.scrollHeight - window.innerHeight;
+    window.scrollTo({ top: maxScroll, behavior: 'smooth' });
+  },
+
+  scrollToTopSky: () => {
+    set({ focusedBuildingIndex: null, selectedProjectId: null });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  },
+
+  // Toast
+  toastMessage: null,
+  showToast: (msg: string) => {
+    set({ toastMessage: msg });
+    setTimeout(() => {
+      set((current) => (current.toastMessage === msg ? { toastMessage: null } : {}));
+    }, 2800);
+  },
+  clearToast: () => set({ toastMessage: null }),
+}));
