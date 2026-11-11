@@ -1,0 +1,3128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aditya Gupta — 3D Brownstone City Portfolio</title>
+    <meta name="description" content="Portfolio of Aditya Gupta, Full-Stack Developer & Creative Engineer. I build fast, beautiful 3D web experiences." />
+    
+    <!-- Open Graph / Social Meta Tags -->
+    <meta property="og:title" content="Aditya Gupta — Portfolio" />
+    <meta property="og:description" content="I build fast, beautiful 3D web experiences." />
+    <meta property="og:type" content="website" />
+    <!-- TODO: Replace this placeholder with an actual screenshot of your portfolio -->
+    <meta property="og:image" content="https://placehold.co/1200x630/0f172a/fbbf24?text=Aditya+Gupta" />
+    
+    <!-- TODO: Replace the emoji favicon with your actual logo SVG or ICO -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>" />
+    
+    <!-- Resource Preconnects for Performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700;800&display=swap" rel="stylesheet" />
+
+    <style>
+        :root {
+            --font-sans: 'Inter', sans-serif;
+            --font-display: 'Space Grotesk', sans-serif;
+            
+            /* Design System Variables */
+            --accent-color: #fbbf24; /* amber-400 */
+            --accent-hover: #fcd34d; /* amber-300 */
+            --text-main: #f8fafc; /* slate-50 */
+            --text-muted: #cbd5e1; /* slate-300 (ensures > 4.5:1 contrast against glass-bg) */
+            
+            --glass-bg: rgba(15, 23, 42, 0.85); /* slate-900 with opacity */
+            --glass-border: 1px solid rgba(255, 255, 255, 0.15);
+            --glass-blur: 16px;
+            --glass-radius: 16px; /* 8px scale */
+            --glass-shadow: 0 16px 32px rgba(0, 0, 0, 0.5); /* 8px scale */
+            
+            --spacing-base: 8px;
+            --body-text-size: 16px;
+        }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: var(--font-sans);
+            font-size: var(--body-text-size);
+            background-color: #dbe3ea;
+            color: var(--text-main);
+            overflow-x: hidden;
+            user-select: none;
+        }
+        .font-display {
+            font-family: var(--font-display);
+        }
+
+        /* Fixed 3D WebGL Viewport */
+        #canvas-container {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+            pointer-events: auto;
+        }
+
+        /* Invisible Scroll Track driving the camera animation */
+        #scroll-track {
+            position: relative;
+            width: 100%;
+            height: 750vh;
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* Unified Glassmorphism UI panel */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--glass-blur));
+            -webkit-backdrop-filter: blur(var(--glass-blur));
+            border: var(--glass-border);
+            border-radius: var(--glass-radius);
+            box-shadow: var(--glass-shadow);
+        }
+
+        /* Accessibility: Visible Focus States */
+        button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+            outline: 2px solid var(--accent-color) !important;
+            outline-offset: 4px;
+            border-radius: 4px;
+        }
+
+        /* Modal responsive transitions (Bottom Sheet on Mobile, Slide Drawer on Desktop) */
+        .modal-closed {
+            transform: translateY(120%) !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+        .modal-open {
+            transform: translateY(0) !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+        }
+        @media (min-width: 640px) {
+            .modal-closed {
+                transform: translateX(120%) !important;
+            }
+            .modal-open {
+                transform: translateX(0) !important;
+            }
+        }
+
+        /* Custom Scrollbar for Modals */
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 9999px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: rgba(251, 191, 36, 0.5);
+            border-radius: 9999px;
+        }
+
+        /* Floating 3D Building Pin Animation */
+        @keyframes floatPin {
+            0%, 100% { transform: translate(-50%, -100%) translateY(0px); }
+            50% { transform: translate(-50%, -100%) translateY(-6px); }
+        }
+        .building-pin {
+            position: fixed;
+            z-index: 15;
+            transform: translate(-50%, -100%);
+            animation: floatPin 3s ease-in-out infinite;
+            pointer-events: auto;
+            transition: opacity 0.3s ease;
+        }
+
+        /* Floating 3D Speech Bubble above Aditya's 3D Avatar */
+        .aditya-speech-bubble {
+            position: fixed;
+            z-index: 24;
+            transform: translate(-50%, -100%);
+            pointer-events: auto;
+            transition: opacity 0.25s ease;
+        }
+        .aditya-speech-bubble::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 8px 8px 0;
+            border-style: solid;
+            border-color: rgba(15, 23, 42, 0.92) transparent transparent transparent;
+        }
+
+        /* Hover Label Tooltip */
+        #hover-label {
+            position: fixed;
+            z-index: 90;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Cinematic Intro Fade Layer -->
+    <div id="intro-fade" class="fixed inset-0 z-[110] bg-slate-950 transition-opacity duration-[2500ms] pointer-events-none"></div>
+
+    <!-- Loading Screen (Hides when assets are ready) -->
+    <div id="loading-screen" class="fixed inset-0 z-[100] bg-slate-900 flex flex-col items-center justify-center transition-opacity duration-1000 ease-in-out pointer-events-none">
+        <div class="w-16 h-16 border-4 border-amber-400 border-t-transparent rounded-full animate-spin mb-6"></div>
+        <h2 class="font-display text-2xl font-bold text-white mb-2">Building the City...</h2>
+        <div class="w-64 h-2 bg-white/20 rounded-full overflow-hidden">
+            <div id="loading-bar" class="h-full bg-amber-400 transition-all duration-300 w-0"></div>
+        </div>
+        <p id="loading-text" class="mt-3 text-slate-400 text-sm font-semibold">0%</p>
+    </div>
+
+    <!-- 3D WebGL City Container -->
+    <div id="canvas-container"></div>
+
+    <!-- Floating 3D Building Markers Layer -->
+    <div id="markers-container" class="fixed inset-0 pointer-events-none z-10 overflow-hidden"></div>
+
+    <!-- Floating 3D Speech Bubble for Aditya's 3D Guide Character -->
+    <div id="aditya-bubble" class="aditya-speech-bubble opacity-0 pointer-events-none">
+        <div onclick="triggerAdityaWave()" class="glass-panel px-4 py-2 flex items-center gap-4 cursor-pointer hover:border-amber-400 transition max-w-xs sm:max-w-sm">
+            <div class="w-10 h-10 rounded bg-amber-400 flex items-center justify-center text-slate-900 text-xl font-extrabold shrink-0">
+                👋
+            </div>
+            <div class="text-left">
+                <div class="text-sm font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
+                    <span>Aditya Gupta</span>
+                </div>
+                <div id="aditya-bubble-text" class="text-base font-display font-bold text-white leading-snug mt-1">
+                    Hi! I'm Aditya! Where would you like to go?
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hover Tooltip Label -->
+    <div id="hover-label" class="glass-panel px-3 py-1.5 rounded text-sm font-bold text-amber-400 border-amber-400/50 shadow-xl"></div>
+
+    <!-- Top Navigation Bar -->
+    <header class="fixed top-0 left-0 right-0 z-30 px-8 py-4 flex items-center justify-between pointer-events-none">
+        <!-- Brand / Identity -->
+        <button onclick="scrollToTopSky()" class="glass-panel px-4 py-2 flex items-center gap-4 pointer-events-auto hover:border-amber-400 transition group">
+            <div class="w-10 h-10 rounded bg-amber-400 flex items-center justify-center text-slate-900 font-display font-extrabold text-lg">
+                AG
+            </div>
+            <div class="text-left">
+                <div class="font-display font-bold text-base text-white group-hover:text-amber-300 transition">Aditya Gupta</div>
+                <div class="text-sm text-slate-300 flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-slate-400 animate-pulse"></span>
+                    Brownstone Ave
+                </div>
+            </div>
+        </button>
+
+        <!-- 5 City Buildings Quick-Jump Bar -->
+        <nav class="hidden lg:flex items-center gap-2 glass-panel p-2 pointer-events-auto">
+            <button onclick="focusBuilding(0)" id="nav-0" class="px-4 py-2 rounded-lg text-base font-semibold text-slate-300 hover:text-white hover:bg-white/10 transition flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-slate-500 transition-colors"></span> 1. About
+            </button>
+            <button onclick="focusBuilding(1)" id="nav-1" class="px-4 py-2 rounded-lg text-base font-semibold text-slate-300 hover:text-white hover:bg-white/10 transition flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-slate-500 transition-colors"></span> 2. Skills
+            </button>
+            <button onclick="focusBuilding(2)" id="nav-2" class="px-4 py-2 rounded-lg text-base font-semibold text-slate-300 hover:text-white hover:bg-white/10 transition flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-slate-500 transition-colors"></span> 3. Projects
+            </button>
+            <button onclick="focusBuilding(3)" id="nav-3" class="px-4 py-2 rounded-lg text-base font-semibold text-slate-300 hover:text-white hover:bg-white/10 transition flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-slate-500 transition-colors"></span> 4. Resume
+            </button>
+            <button onclick="focusBuilding(4)" id="nav-4" class="px-4 py-2 rounded-lg text-base font-semibold text-slate-300 hover:text-white hover:bg-white/10 transition flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-slate-500 transition-colors"></span> 5. Contact
+            </button>
+        </nav>
+
+        <!-- Atmosphere & Street Controls -->
+        <div class="flex items-center gap-4 pointer-events-auto">
+            <button onclick="goToHub()" class="hidden sm:flex glass-panel text-amber-400 px-4 py-2 text-base font-bold items-center gap-2 hover:border-amber-400 transition" title="Street Overview" aria-label="Street Overview">
+                <i class="fa-solid fa-street-view"></i>
+                <span>Street Overview</span>
+            </button>
+            <button onclick="toggleTimeOfDay()" id="time-btn" class="hidden sm:flex glass-panel text-white px-4 py-2 text-base font-bold flex items-center gap-2 hover:border-amber-400 transition" title="Switch Lighting" aria-label="Toggle Time of Day">
+                <i id="time-icon" class="fa-solid fa-sun text-amber-400"></i>
+                <span id="time-label" class="hidden sm:inline">Daylight</span>
+            </button>
+            <button onclick="toggleViewMode()" class="glass-panel text-white px-3 py-2 text-sm font-bold flex items-center gap-2 hover:border-amber-400 transition" aria-label="Toggle Classic or 3D View">
+                <i id="view-toggle-icon" class="fa-solid fa-cube text-amber-400"></i>
+                <span class="hidden sm:inline" id="view-toggle-text">3D View</span>
+            </button>
+            <button onclick="toggleMobileMenu()" class="lg:hidden glass-panel text-amber-400 px-3 py-2 text-base font-bold flex items-center gap-2" aria-label="Open Mobile Menu">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Mobile Menu Overlay -->
+    <div id="mobile-menu" class="fixed inset-0 z-40 bg-slate-900/95 backdrop-blur-xl flex-col items-center justify-center gap-6 hidden opacity-0 transition-opacity pointer-events-none">
+        <button onclick="toggleMobileMenu()" class="absolute top-6 right-8 text-white text-3xl p-2" aria-label="Close Menu">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+        <div class="flex flex-col gap-6 text-center" id="mobile-nav-links">
+            <!-- Populated by JS -->
+        </div>
+        <button onclick="toggleTimeOfDay()" class="glass-panel text-white px-6 py-3 mt-4 text-lg font-bold flex items-center gap-3">
+            <i class="fa-solid fa-sun text-amber-400"></i>
+            <span>Toggle Lighting</span>
+        </button>
+    </div>
+
+    <!-- Classic View Container (Only visible in Classic Mode) -->
+    <main id="classic-view" class="hidden relative z-10 pt-32 pb-16 px-4 sm:px-8 max-w-4xl mx-auto space-y-12"></main>
+
+    <!-- STAGE 1 OVERLAY: SKY WITH CLOUDS & SUN ("Welcome to My Portfolio") -->
+    <section id="sky-hero" class="fixed inset-0 z-20 flex flex-col items-center justify-center px-4 text-center pointer-events-none transition-opacity duration-500 bg-gradient-to-b from-slate-900/70 via-slate-900/20 to-transparent">
+        <div id="intro-badge" class="glass-panel px-6 py-2 rounded-full shadow-md mb-5 inline-flex items-center gap-2 text-white text-xs sm:text-sm font-bold tracking-wide uppercase border-white/20 transition-opacity duration-300">
+            <i class="fa-solid fa-cloud-sun text-amber-400 text-base"></i>
+            <span>Interactive 3D City Experience</span>
+        </div>
+
+        <div id="hero-text-block" class="opacity-0 transition-opacity duration-[2000ms] delay-500 ease-out flex flex-col items-center">
+            <h1 class="font-display text-4xl sm:text-6xl md:text-7xl font-extrabold text-white tracking-tight drop-shadow-lg max-w-4xl leading-tight">
+                I build fast, beautiful 3D web <span class="text-amber-400">experiences.</span>
+            </h1>
+
+            <p class="mt-4 font-display text-lg sm:text-xl font-bold text-slate-200 drop-shadow-md">
+                Aditya Gupta · Full-Stack Developer & Creative Engineer
+            </p>
+
+            <p class="mt-3 max-w-xl text-slate-300 text-sm sm:text-base font-medium leading-relaxed drop-shadow">
+                Scroll down to explore my interactive brownstone avenue.
+            </p>
+
+            <div class="mt-8 flex flex-wrap items-center justify-center gap-3 pointer-events-auto">
+                <button onclick="startStreetTour()" class="px-6 py-3.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-sm shadow-xl flex items-center gap-2.5 transition transform hover:-translate-y-0.5">
+                    <span>Scroll Into The City</span>
+                    <i class="fa-solid fa-angles-down animate-bounce"></i>
+                </button>
+                <button onclick="goToHub()" class="px-5 py-3.5 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md text-white font-bold text-sm shadow-lg flex items-center gap-2 transition">
+                    <i class="fa-solid fa-compass text-amber-400"></i>
+                    <span>Skip to City Hub</span>
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- STAGE 2 OVERLAY: STREET TOUR CAPTION BANNER (Shows while scrolling past buildings) -->
+    <div id="tour-banner" class="fixed bottom-8 left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-xl pointer-events-none opacity-0 transition-all duration-300 translate-y-4">
+        <div class="glass-panel px-6 py-4 flex items-center justify-between gap-4 pointer-events-auto">
+            <div class="flex items-center gap-4">
+                <div id="tour-badge" class="w-12 h-12 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-amber-400 font-display font-bold text-xl shrink-0">
+                    101
+                </div>
+                <div>
+                    <div id="tour-subtitle" class="text-sm uppercase tracking-wider font-bold text-amber-400">Passing Building 1 of 5</div>
+                    <h3 id="tour-title" class="font-display font-bold text-lg text-white mt-1">101 Brownstone Ave</h3>
+                </div>
+            </div>
+            <button id="tour-enter-btn" onclick="focusBuilding(0)" class="px-6 py-3 rounded bg-amber-400 hover:bg-amber-300 text-slate-900 font-bold text-base shrink-0 transition flex items-center gap-2">
+                <span>Enter</span>
+                <i class="fa-solid fa-arrow-right"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- STAGE 3 OVERLAY: "WHERE WOULD YOU LIKE TO GO?" CITY HUB (Now on the right side) -->
+    <section id="destination-hub" class="fixed inset-y-0 right-0 sm:right-8 z-20 flex flex-col justify-center px-4 pointer-events-none opacity-0 translate-x-12 transition-all duration-500 w-full sm:w-[420px]">
+        <div class="glass-panel w-full p-6 pointer-events-auto shadow-2xl max-h-[90vh] overflow-y-auto custom-scroll">
+            <div class="flex flex-col gap-2 pb-5 border-b border-white/10">
+                <span class="text-xs font-bold uppercase tracking-widest text-amber-400 flex items-center gap-2">
+                    <i class="fa-solid fa-location-dot"></i> Aditya's City Hub
+                </span>
+                <h2 class="font-display text-2xl font-extrabold text-white mt-1">
+                    Where to next?
+                </h2>
+                <p class="text-sm text-slate-300 mt-1">
+                    Select a destination or click any building.
+                </p>
+            </div>
+
+            <!-- 5 Building Destination Cards (Vertical List) -->
+            <div class="flex flex-col gap-3 mt-5">
+                <button onclick="focusBuilding(0)" class="group p-3 sm:p-4 rounded-xl bg-slate-800/50 hover:bg-amber-400/10 border border-slate-700 hover:border-amber-400/50 text-left transition flex items-center gap-4">
+                    <div class="w-12 h-12 rounded bg-slate-900 border border-slate-700 flex items-center justify-center shrink-0 group-hover:border-amber-400/50 transition">
+                        <i class="fa-solid fa-user-astronaut text-slate-400 group-hover:text-amber-400 transition text-lg"></i>
+                    </div>
+                    <div>
+                        <div class="font-display font-bold text-base text-white group-hover:text-amber-300">About Me</div>
+                        <div class="text-xs text-slate-400 mt-0.5">#101 • The Studio</div>
+                    </div>
+                </button>
+
+                <button onclick="focusBuilding(1)" class="group p-3 sm:p-4 rounded-xl bg-slate-800/50 hover:bg-amber-400/10 border border-slate-700 hover:border-amber-400/50 text-left transition flex items-center gap-4">
+                    <div class="w-12 h-12 rounded bg-slate-900 border border-slate-700 flex items-center justify-center shrink-0 group-hover:border-amber-400/50 transition">
+                        <i class="fa-solid fa-bolt text-slate-400 group-hover:text-amber-400 transition text-lg"></i>
+                    </div>
+                    <div>
+                        <div class="font-display font-bold text-base text-white group-hover:text-amber-300">Skills</div>
+                        <div class="text-xs text-slate-400 mt-0.5">#103 • Tech Foundry</div>
+                    </div>
+                </button>
+
+                <button onclick="focusBuilding(2)" class="group p-3 sm:p-4 rounded-xl bg-slate-800/50 hover:bg-amber-400/10 border border-slate-700 hover:border-amber-400/50 text-left transition flex items-center gap-4">
+                    <div class="w-12 h-12 rounded bg-slate-900 border border-slate-700 flex items-center justify-center shrink-0 group-hover:border-amber-400/50 transition">
+                        <i class="fa-solid fa-code-branch text-slate-400 group-hover:text-amber-400 transition text-lg"></i>
+                    </div>
+                    <div>
+                        <div class="font-display font-bold text-base text-white group-hover:text-amber-300">Projects</div>
+                        <div class="text-xs text-slate-400 mt-0.5">#105 • Innovation Hub</div>
+                    </div>
+                </button>
+
+                <button onclick="focusBuilding(3)" class="group p-3 sm:p-4 rounded-xl bg-slate-800/50 hover:bg-amber-400/10 border border-slate-700 hover:border-amber-400/50 text-left transition flex items-center gap-4">
+                    <div class="w-12 h-12 rounded bg-slate-900 border border-slate-700 flex items-center justify-center shrink-0 group-hover:border-amber-400/50 transition">
+                        <i class="fa-solid fa-file-lines text-slate-400 group-hover:text-amber-400 transition text-lg"></i>
+                    </div>
+                    <div>
+                        <div class="font-display font-bold text-base text-white group-hover:text-amber-300">Resume</div>
+                        <div class="text-xs text-slate-400 mt-0.5">#107 • Career Archive</div>
+                    </div>
+                </button>
+
+                <button onclick="focusBuilding(4)" class="group p-3 sm:p-4 rounded-xl bg-slate-800/50 hover:bg-amber-400/10 border border-slate-700 hover:border-amber-400/50 text-left transition flex items-center gap-4">
+                    <div class="w-12 h-12 rounded bg-slate-900 border border-slate-700 flex items-center justify-center shrink-0 group-hover:border-amber-400/50 transition">
+                        <i class="fa-solid fa-paper-plane text-slate-400 group-hover:text-amber-400 transition text-lg"></i>
+                    </div>
+                    <div>
+                        <div class="font-display font-bold text-base text-white group-hover:text-amber-300">Contact</div>
+                        <div class="text-xs text-slate-400 mt-0.5">#109 • Connect Lounge</div>
+                    </div>
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- BUILDING INTERIOR CONTENT SIDE DRAWER (Floats securely matching the glass-panel design) -->
+    <div id="building-modal" class="fixed inset-x-0 bottom-0 top-auto sm:top-4 sm:bottom-4 sm:inset-auto sm:right-4 z-50 w-full sm:w-[480px] md:w-[540px] max-h-[85vh] sm:max-h-none glass-panel rounded-t-3xl sm:rounded-2xl flex flex-col modal-closed transition-all duration-300 ease-out" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
+        <!-- Drawer Header -->
+        <div class="p-6 border-b border-white/10 flex items-center justify-between gap-4">
+            <div class="flex items-center gap-4">
+                <div id="modal-badge" class="w-12 h-12 rounded bg-amber-400 text-slate-900 font-display font-extrabold flex items-center justify-center text-lg">
+                    101
+                </div>
+                <div>
+                    <div id="modal-subtitle" class="text-sm font-bold uppercase tracking-wider text-amber-400">101 Brownstone Ave</div>
+                    <h2 id="modal-title" class="font-display text-2xl font-bold text-white mt-1">About</h2>
+                </div>
+            </div>
+            <!-- FIXED: Passing 'false' prevents the page from auto-scrolling to the bottom when closed -->
+            <button onclick="closeBuildingModal(false)" class="w-12 h-12 rounded bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center transition border border-slate-600" title="Close Panel">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+        </div>
+
+        <!-- Drawer Dynamic Body Content -->
+        <div id="modal-body" class="p-6 sm:p-8 overflow-y-auto custom-scroll flex-1 text-base text-slate-200"></div>
+
+        <!-- Drawer Footer Navigation (Prev / Hub / Next Building) -->
+        <div class="p-6 border-t border-white/10 flex items-center justify-between gap-4">
+            <button id="prev-building-btn" onclick="stepBuilding(-1)" class="px-6 py-3 rounded bg-slate-800 hover:bg-slate-700 text-base font-semibold text-white flex items-center gap-2 transition border border-slate-600">
+                <i class="fa-solid fa-arrow-left"></i> Prev
+            </button>
+            <!-- explicitly labeled to show it goes to the bottom hub -->
+            <button onclick="closeBuildingModal(true)" class="px-6 py-3 rounded bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/30 text-base font-bold text-amber-400 transition">
+                <i class="fa-solid fa-city mr-2"></i> Go to Hub
+            </button>
+            <button id="next-building-btn" onclick="stepBuilding(1)" class="px-6 py-3 rounded bg-slate-800 hover:bg-slate-700 text-base font-semibold text-white flex items-center gap-2 transition border border-slate-600">
+                Next <i class="fa-solid fa-arrow-right"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Custom Notification Toast (No alert() used) -->
+    <div id="toast" class="fixed top-24 left-1/2 -translate-x-1/2 z-[60] glass-panel px-6 py-4 text-white text-base font-semibold flex items-center gap-4 opacity-0 pointer-events-none transition-all duration-300 -translate-y-4">
+        <i class="fa-solid fa-circle-info text-amber-400 text-lg"></i>
+        <span id="toast-text">Notification message</span>
+    </div>
+
+    <!-- Scroll Track that drives the journey -->
+    <div id="scroll-track"></div>
+
+    <script>
+        /********************************************************************
+         * PORTFOLIO DATA FOR 3D BUILDINGS (Isolated Content Data)
+         * TODO: Replace the placeholder text, stats, links, and project info.
+         * Note: Moved into this isolated script block to satisfy the 
+         * single-file requirement of this environment, while keeping it 
+         * perfectly separated from the main 3D engine code below.
+         ********************************************************************/
+        const BUILDINGS_DATA = [
+            {
+                id: 0,
+                number: "101",
+                name: "About Me",
+                storefrontTitle: "THE STUDIO",
+                subtitle: "101 Brownstone Ave • Bio & Story",
+                awningColor: 0x991f2e,
+                trimColor: "#f87171",
+                icon: "fa-user-astronaut",
+                xPos: -52,
+                htmlContent: `
+                    <div class="flex flex-col gap-6">
+                        <div class="flex flex-col sm:flex-row items-start sm:items-center gap-5">
+                            <!-- TODO: Profile Photo Slot -->
+                            <div class="w-24 h-24 rounded-xl bg-slate-800 border border-slate-600 flex items-center justify-center shrink-0 overflow-hidden shadow-lg">
+                                <i class="fa-solid fa-user-astronaut text-slate-500 text-3xl"></i>
+                            </div>
+                            <div>
+                                <!-- TODO: Toggle Availability -->
+                                ${(() => {
+                                    const isOpenToWork = true;
+                                    return isOpenToWork ? `
+                                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold uppercase tracking-wider mb-2">
+                                            <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping absolute"></span>
+                                            <span class="w-2 h-2 rounded-full bg-amber-400 relative"></span> 
+                                            Open to Work
+                                        </div>
+                                    ` : '';
+                                })()}
+                                <h3 class="font-display text-2xl font-bold text-white tracking-tight">Aditya Gupta</h3> <!-- TODO: Name -->
+                                <p class="text-amber-400 text-sm font-bold mt-1 uppercase tracking-widest">
+                                    <!-- TODO: Tagline -->
+                                    Full-Stack Developer & Creative Engineer
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div class="space-y-4 leading-relaxed text-slate-300 text-sm sm:text-base border-t border-white/10 pt-4">
+                            <!-- TODO: Bio Paragraphs -->
+                            <p>
+                                Welcome to <strong>The Studio</strong>. I specialize in turning complex ideas into intuitive, high-performance digital products. With a strong foundation in both system architecture and visual design, I build experiences that are completely immersive.
+                            </p>
+                            <p>
+                                When I'm not writing code, you'll usually find me experimenting with 3D motion graphics or exploring the intersection of web performance and creative storytelling.
+                            </p>
+                        </div>
+                    </div>
+                `
+            },
+            {
+                id: 1,
+                number: "103",
+                name: "Skills",
+                storefrontTitle: "TECH FOUNDRY",
+                subtitle: "103 Brownstone Ave • Engineering Stack",
+                awningColor: 0xe6dac1,
+                trimColor: "#fbbf24",
+                icon: "fa-bolt",
+                xPos: -26,
+                htmlContent: `
+                    <p class="text-slate-300 text-sm mb-6">
+                        Inside <strong>Tech Foundry</strong> is my engineering workshop. Here is my core toolkit:
+                    </p>
+        
+                    <div class="space-y-6">
+                        <!-- TODO: Skill Categories & Tags -->
+                        ${[
+                            { 
+                                title: 'Frontend & UI', icon: 'fa-brands fa-react', 
+                                skills: ['React', 'Next.js', 'TypeScript', 'Tailwind CSS', 'HTML5 / CSS3'] 
+                            },
+                            { 
+                                title: '3D Web & Motion', icon: 'fa-solid fa-cube', 
+                                skills: ['Three.js', 'WebGL', 'React Three Fiber', 'GSAP', 'Framer Motion'] 
+                            },
+                            { 
+                                title: 'Backend & Cloud', icon: 'fa-solid fa-server', 
+                                skills: ['Node.js', 'Python', 'PostgreSQL', 'REST APIs', 'GraphQL'] 
+                            },
+                            { 
+                                title: 'DevOps & Tools', icon: 'fa-solid fa-toolbox', 
+                                skills: ['Git', 'Docker', 'AWS', 'Vercel', 'Figma'] 
+                            }
+                        ].map(category => `
+                            <div>
+                                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+                                    <i class="${category.icon} text-amber-400"></i> ${category.title}
+                                </h4>
+                                <div class="flex flex-wrap gap-2">
+                                    ${category.skills.map(s => `<span class="px-3 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm font-semibold text-slate-200 transition hover:border-amber-400/50 hover:bg-slate-700">${s}</span>`).join('')}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `
+            },
+            {
+                id: 2,
+                number: "105",
+                name: "Projects",
+                storefrontTitle: "INNOVATION HUB",
+                subtitle: "105 Brownstone Ave • Featured Builds",
+                awningColor: 0x991f2e,
+                trimColor: "#34d399",
+                icon: "fa-code-branch",
+                xPos: 0,
+                htmlContent: `
+                    <!-- TODO: Projects Data -->
+                    ${(() => {
+                        const projects = [
+                            { id: 'p1', title: 'Brownstone Metropolis', desc: 'Photorealistic 3D City Portfolio', role: 'Sole Developer', stack: 'Three.js, WebGL, Tailwind', problem: 'Needed an immersive way to showcase creative engineering without relying on standard scrolling websites.', result: 'Built a 60fps responsive 3D environment with procedural textures and scroll choreography.', tags: ['Three.js', 'WebGL', 'Creative'], live: 'javascript:void(0)', code: 'javascript:void(0)' },
+                            { id: 'p2', title: 'NeuroCanvas', desc: 'Multiplayer infinite canvas workspace', role: 'Full-Stack Lead', stack: 'React, Node.js, Socket.io', problem: 'Remote teams lacked a frictionless way to brainstorm visually in real-time.', result: 'Launched MVP with live cursor presence handling 100+ concurrent users per room.', tags: ['React', 'WebSockets', 'SaaS'], live: '', code: 'javascript:void(0)' }
+                        ];
+                        
+                        return `
+                            <!-- Project List View -->
+                            <div id="projects-list" class="space-y-6">
+                                ${projects.map(p => `
+                                    <div class="rounded-xl overflow-hidden bg-slate-800/50 border border-slate-700 hover:border-amber-400/50 transition cursor-pointer flex flex-col group" onclick="document.getElementById('projects-list').classList.add('hidden'); document.getElementById('project-detail-${p.id}').classList.remove('hidden'); document.getElementById('modal-body').scrollTop = 0;">
+                                        <div class="w-full aspect-video bg-slate-700 relative flex items-center justify-center overflow-hidden border-b border-slate-700">
+                                            <!-- TODO: Project Image Placeholder -->
+                                            <i class="fa-solid fa-image text-slate-500 text-4xl group-hover:scale-110 transition duration-500"></i>
+                                        </div>
+                                        <div class="p-5">
+                                            <h4 class="font-display font-bold text-xl text-white">${p.title}</h4>
+                                            <p class="text-slate-300 text-sm mt-1">${p.desc}</p>
+                                            <div class="flex flex-wrap gap-2 mt-4">
+                                                ${p.tags.map(t => `<span class="text-xs font-bold uppercase tracking-wider px-2 py-1 rounded bg-slate-900 border border-slate-600 text-amber-400">${t}</span>`).join('')}
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+        
+                            <!-- Nested Detail Views -->
+                            ${projects.map(p => `
+                                <div id="project-detail-${p.id}" class="hidden flex flex-col h-full">
+                                    <button onclick="document.getElementById('project-detail-${p.id}').classList.add('hidden'); document.getElementById('projects-list').classList.remove('hidden');" class="self-start mb-4 text-xs font-bold uppercase tracking-wider text-amber-400 hover:text-amber-300 flex items-center gap-2 transition">
+                                        <i class="fa-solid fa-arrow-left"></i> Back to List
+                                    </button>
+                                    <div class="w-full aspect-video bg-slate-700 rounded-xl mb-6 flex items-center justify-center border border-slate-600">
+                                        <!-- TODO: Detail Image Placeholder -->
+                                        <i class="fa-solid fa-image text-slate-500 text-4xl"></i>
+                                    </div>
+                                    <h3 class="font-display text-2xl font-bold text-white mb-4">${p.title}</h3>
+                            
+                            <div class="flex gap-3 mb-6 pb-6 border-b border-white/10">
+                                ${p.live ? `<a href="${p.live}" target="_blank" rel="noopener noreferrer" class="px-4 py-2 rounded-md bg-amber-400 text-slate-900 font-bold hover:bg-amber-300 transition text-sm flex items-center gap-2">Live Demo <i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : ''}
+                                ${p.code ? `<a href="${p.code}" target="_blank" rel="noopener noreferrer" class="px-4 py-2 rounded-md bg-slate-700 hover:bg-slate-600 border border-slate-600 text-white transition text-sm flex items-center gap-2"><i class="fa-brands fa-github"></i> Code</a>` : ''}
+                            </div>
+                            
+                            <div class="space-y-5 text-sm">
+                                        <div>
+                                            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">The Challenge</div>
+                                            <div class="text-slate-200 leading-relaxed">${p.problem}</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">My Role</div>
+                                            <div class="text-slate-200 leading-relaxed">${p.role}</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Tech Stack</div>
+                                            <div class="text-slate-200 leading-relaxed">${p.stack}</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-xs font-bold text-amber-400 uppercase tracking-wider mb-1">The Result</div>
+                                            <div class="text-slate-200 leading-relaxed">${p.result}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        `;
+                    })()}
+                `
+            },
+            {
+                id: 3,
+                number: "107",
+                name: "Resume",
+                storefrontTitle: "CAREER ARCHIVE",
+                subtitle: "107 Brownstone Ave • Experience & CV",
+                awningColor: 0xe6dac1,
+                trimColor: "#38bdf8",
+                icon: "fa-file-lines",
+                xPos: 26,
+                htmlContent: `
+                    <!-- TODO: Add Resume URL here. If empty, the button is safely disabled. -->
+                    ${(() => {
+                        const cvUrl = ""; 
+                        return `
+                            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-800/80 border border-slate-700 p-5 rounded-xl mb-8">
+                                <div>
+                                    <h4 class="font-bold text-white text-sm">Curriculum Vitae</h4>
+                                    <p class="text-xs text-slate-400 mt-1">Download complete software engineering resume</p>
+                                </div>
+                                <button ${cvUrl ? `onclick="window.open('${cvUrl}')"` : 'disabled'} class="px-4 py-2 rounded-md font-bold text-sm transition flex items-center gap-2 ${cvUrl ? 'bg-amber-400 hover:bg-amber-300 text-slate-900 shadow-md' : 'bg-slate-800 border border-slate-700 text-slate-500 cursor-not-allowed'}">
+                                    <i class="fa-solid fa-download"></i> Download PDF
+                                </button>
+                            </div>
+                        `;
+                    })()}
+        
+                    <div class="space-y-8 relative before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-700 pl-8">
+                        <!-- TODO: Experience Items -->
+                        ${[
+                            { year: '2024 — PRESENT', role: 'Senior Frontend Engineer', company: 'NovaStack Digital Labs', desc: 'Spearheaded interactive 3D product launches and migrated legacy monolith to micro-frontend architecture.' },
+                            { year: '2022 — 2024', role: 'Full-Stack Developer', company: 'Vertex Cloud Systems', desc: 'Engineered scalable React & Node.js SaaS modules and managed automated CI/CD deployment pipelines.' },
+                            { year: '2020 — 2022', role: 'UI/UX Developer', company: 'Creative Synergies', desc: 'Designed and developed responsive component libraries and design systems for enterprise clients.' }
+                        ].map((exp, i) => `
+                            <div class="relative">
+                                <span class="w-3 h-3 rounded-full ${i === 0 ? 'bg-amber-400' : 'bg-slate-600'} absolute -left-[37px] top-1.5 ring-4 ring-slate-900 z-10"></span>
+                                <div class="text-xs font-bold ${i === 0 ? 'text-amber-400' : 'text-slate-400'} mb-1 tracking-widest uppercase">${exp.year}</div>
+                                <h4 class="font-display font-bold text-white text-lg">${exp.role}</h4>
+                                <div class="text-sm font-semibold text-slate-400 mb-2">${exp.company}</div>
+                                <p class="text-sm text-slate-300 leading-relaxed">${exp.desc}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                `
+            },
+            {
+                id: 4,
+                number: "109",
+                name: "Contact",
+                storefrontTitle: "CONNECT LOUNGE",
+                subtitle: "109 Brownstone Ave • Let's Connect",
+                awningColor: 0x991f2e,
+                trimColor: "#c084fc",
+                icon: "fa-paper-plane",
+                xPos: 52,
+                htmlContent: `
+                    <div class="space-y-6">
+                        <p class="text-slate-300 text-sm">
+                            Have a project or idea? Let's build something great together. Send a message below:
+                        </p>
+        
+                        <!-- Validated Contact Form with inline JS states -->
+                        <form id="contact-form" class="space-y-4" onsubmit="
+                            event.preventDefault(); 
+                            const btn = document.getElementById('submit-btn'); 
+                            const msg = document.getElementById('form-msg'); 
+                            if(this.checkValidity()){ 
+                                btn.innerHTML = '<i class=\\'fa-solid fa-spinner fa-spin\\'></i> Sending...'; 
+                                btn.disabled = true; 
+                                setTimeout(() => { 
+                                    btn.innerHTML = '<i class=\\'fa-solid fa-check\\'></i> Sent Successfully!'; 
+                                    msg.classList.remove('hidden', 'text-red-400'); 
+                                    msg.classList.add('text-green-400'); 
+                                    msg.innerText = 'Thanks for reaching out! I\\'ll get back to you soon.'; 
+                                    this.reset(); 
+                                    setTimeout(()=> { 
+                                        btn.innerHTML = '<i class=\\'fa-solid fa-paper-plane\\'></i> Send Message'; 
+                                        btn.disabled = false; 
+                                    }, 4000); 
+                                }, 1500); 
+                            } else { 
+                                msg.classList.remove('hidden', 'text-green-400'); 
+                                msg.classList.add('text-red-400'); 
+                                msg.innerText = 'Please fill out all required fields correctly.'; 
+                            }
+                        ">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Your Name</label>
+                                    <input type="text" required class="w-full px-4 py-3 rounded-md bg-slate-900/50 border border-slate-700 text-white text-sm focus:outline-none focus:border-amber-400 transition placeholder:text-slate-600" placeholder="Jane Doe">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Your Email</label>
+                                    <input type="email" required class="w-full px-4 py-3 rounded-md bg-slate-900/50 border border-slate-700 text-white text-sm focus:outline-none focus:border-amber-400 transition placeholder:text-slate-600" placeholder="jane@example.com">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Message</label>
+                                <textarea rows="4" required class="w-full px-4 py-3 rounded-md bg-slate-900/50 border border-slate-700 text-white text-sm focus:outline-none focus:border-amber-400 transition placeholder:text-slate-600 resize-none" placeholder="Let's talk about..."></textarea>
+                            </div>
+                            <button type="submit" id="submit-btn" class="w-full py-3.5 rounded-md bg-amber-400 hover:bg-amber-300 text-slate-900 font-bold text-sm transition flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-paper-plane"></i> Send Message
+                            </button>
+                            <div id="form-msg" class="hidden text-sm font-bold text-center mt-2 px-4 py-2 rounded-md bg-slate-800 border border-slate-700"></div>
+                        </form>
+        
+                        <div class="pt-6 mt-6 border-t border-white/10 flex flex-wrap items-center justify-between gap-4 text-sm text-slate-300">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-envelope text-slate-500"></i>
+                                <span class="font-medium"><!-- TODO: Email --> hello@example.com</span>
+                            </div>
+                            
+                            <!-- TODO: Social Links -->
+                            ${(() => {
+                                const socials = { github: 'javascript:void(0)', linkedin: 'javascript:void(0)', twitter: '' }; 
+                                const icons = [];
+                                if (socials.github) icons.push(`<a href="${socials.github}" target="_blank" rel="noopener noreferrer" class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-800 hover:bg-amber-400 hover:text-slate-900 transition text-sm"><i class="fa-brands fa-github"></i></a>`);
+                                if (socials.linkedin) icons.push(`<a href="${socials.linkedin}" target="_blank" rel="noopener noreferrer" class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-800 hover:bg-amber-400 hover:text-slate-900 transition text-sm"><i class="fa-brands fa-linkedin"></i></a>`);
+                                if (socials.twitter) icons.push(`<a href="${socials.twitter}" target="_blank" rel="noopener noreferrer" class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-800 hover:bg-amber-400 hover:text-slate-900 transition text-sm"><i class="fa-brands fa-x-twitter"></i></a>`);
+                                
+                                return icons.length ? `<div class="flex items-center gap-2">${icons.join('')}</div>` : '';
+                            })()}
+                        </div>
+                    </div>
+                `
+            }
+        ];
+    </script>
+    <script>
+        /********************************************************************
+         * 1.5. VIEW MODE INITIALIZATION & MOBILE MENU
+         ********************************************************************/
+        let mobileMenuOpen = false;
+        function toggleMobileMenu() {
+            const menu = document.getElementById("mobile-menu");
+            mobileMenuOpen = !mobileMenuOpen;
+            if (mobileMenuOpen) {
+                menu.classList.remove("hidden");
+                requestAnimationFrame(() => {
+                    menu.classList.remove("opacity-0", "pointer-events-none");
+                    menu.classList.add("opacity-100", "pointer-events-auto", "flex");
+                });
+                const linkContainer = document.getElementById("mobile-nav-links");
+                if (linkContainer.children.length === 0) {
+                    BUILDINGS_DATA.forEach((b, idx) => {
+                        const btn = document.createElement("button");
+                        btn.className = "text-xl font-display font-bold text-slate-300 hover:text-amber-400 transition";
+                        btn.innerText = `${b.number} — ${b.name}`;
+                        btn.onclick = () => {
+                            toggleMobileMenu();
+                            if (viewMode === 'classic') {
+                                document.getElementById(`section-${b.id}`).scrollIntoView({behavior: 'smooth'});
+                            } else {
+                                focusBuilding(idx);
+                            }
+                        };
+                        linkContainer.appendChild(btn);
+                    });
+                }
+            } else {
+                menu.classList.remove("opacity-100", "pointer-events-auto");
+                menu.classList.add("opacity-0", "pointer-events-none");
+                setTimeout(() => {
+                    menu.classList.add("hidden");
+                    menu.classList.remove("flex");
+                }, 300);
+            }
+        }
+
+        const viewMode = localStorage.getItem('portfolioViewMode') || 
+            (window.matchMedia('(prefers-reduced-motion: reduce)').matches || (navigator.deviceMemory && navigator.deviceMemory < 4) ? 'classic' : '3d');
+            
+        function toggleViewMode() {
+            localStorage.setItem('portfolioViewMode', viewMode === 'classic' ? '3d' : 'classic');
+            window.location.reload();
+        }
+
+        if (viewMode === 'classic') {
+            // Apply Classic 2D Single-Page Layout
+            document.getElementById('loading-screen').classList.add('hidden');
+            document.getElementById('intro-fade').classList.add('hidden');
+            document.getElementById('sky-hero').classList.add('hidden');
+            document.getElementById('canvas-container').classList.add('hidden');
+            document.getElementById('scroll-track').classList.add('hidden');
+            document.body.style.overflowY = 'auto'; // allow normal scrolling
+            
+            document.getElementById('view-toggle-text').textContent = 'Classic View';
+            document.getElementById('view-toggle-icon').className = 'fa-solid fa-image text-amber-400';
+            
+            const classicContainer = document.getElementById('classic-view');
+            classicContainer.classList.remove('hidden');
+            
+            // Generate Classic Content
+            const headerSection = document.createElement('section');
+            headerSection.className = "text-center mb-16 pt-8";
+            headerSection.innerHTML = `
+                <h1 class="font-display text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-4">Aditya Gupta</h1>
+                <p class="text-xl text-slate-600 font-bold mb-2">Full-Stack Developer & Creative Engineer</p>
+                <p class="text-slate-500">I build fast, beautiful web experiences.</p>
+            `;
+            classicContainer.appendChild(headerSection);
+
+            BUILDINGS_DATA.forEach(b => {
+                const section = document.createElement('section');
+                section.id = `section-${b.id}`;
+                section.className = "glass-panel p-6 sm:p-10 !bg-slate-900 !text-slate-200 border !border-slate-800 shadow-2xl relative overflow-hidden";
+                section.innerHTML = `
+                    <div class="absolute top-0 left-0 w-2 h-full" style="background-color: ${b.trimColor}"></div>
+                    <div class="flex items-center gap-4 mb-8 pb-6 border-b border-white/10">
+                        <div class="w-14 h-14 rounded-xl flex items-center justify-center text-xl shadow-lg shrink-0" style="background-color: ${b.trimColor}20; color: ${b.trimColor}; border: 1px solid ${b.trimColor}50">
+                            <i class="fa-solid ${b.icon}" aria-label="Section Icon"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">${b.subtitle}</div>
+                            <h2 class="font-display text-2xl sm:text-3xl font-bold text-white">${b.name}</h2>
+                        </div>
+                    </div>
+                    <div class="text-base leading-relaxed">${b.htmlContent}</div>
+                `;
+                classicContainer.appendChild(section);
+            });
+            
+            // Dummy logic to prevent console errors from inline content.js handlers when in classic view
+            window.focusBuilding = function() {};
+            window.closeBuildingModal = function() {};
+        } else {
+            // Load Three.js dynamically only for 3D View (Saving CPU/Network for low-end devices)
+            const threeScript = document.createElement('script');
+            threeScript.src = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
+            threeScript.onload = init3DScene;
+            document.head.appendChild(threeScript);
+        }
+
+        /********************************************************************
+         * 2. THREE.JS SCENE SETUP WITH ACES FILMIC TONE MAPPING & PBR LIGHTING
+         ********************************************************************/
+        function init3DScene() {
+            const container = document.getElementById("canvas-container");
+            
+            // --- Core Three.js Setup ---
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xdbe3ea);
+            scene.fog = new THREE.Fog(0xdbe3ea, 20, 180);
+
+            const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.5, 500);
+            camera.position.set(0, 64, 30);
+            
+            const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+            container.appendChild(renderer.domElement);
+
+            // --- Lighting ---
+            const hemiLight = new THREE.HemisphereLight(0xf3f8ff, 0x4a5568, 0.65);
+            scene.add(hemiLight);
+
+            const ambientLight = new THREE.AmbientLight(0xfff5e6, 0.45);
+            scene.add(ambientLight);
+
+            const sunLight = new THREE.DirectionalLight(0xfff1d6, 1.35);
+            sunLight.position.set(60, 80, 40);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 10;
+            sunLight.shadow.camera.far = 250;
+            sunLight.shadow.camera.left = -120;
+            sunLight.shadow.camera.right = 120;
+            sunLight.shadow.camera.top = 120;
+            sunLight.shadow.camera.bottom = -120;
+            sunLight.shadow.bias = -0.0005;
+            scene.add(sunLight);
+
+            // --- Sun / Sky Elements ---
+            const sunGeom = new THREE.SphereGeometry(12, 32, 32);
+            const sunMat = new THREE.MeshBasicMaterial({ color: 0xfff4d9 });
+            const sunMesh = new THREE.Mesh(sunGeom, sunMat);
+            sunMesh.position.set(120, 110, -180);
+            scene.add(sunMesh);
+
+            const haloGeom = new THREE.SphereGeometry(18, 32, 32);
+            const haloMat = new THREE.MeshBasicMaterial({
+                color: 0xffe8aa,
+                transparent: true,
+                opacity: 0.15,
+                blending: THREE.AdditiveBlending
+            });
+            const haloMesh = new THREE.Mesh(haloGeom, haloMat);
+            haloMesh.position.copy(sunMesh.position);
+            scene.add(haloMesh);
+
+            const clouds = [];
+            const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+            
+            function createCloud(x, y, z, scale) {
+                const group = new THREE.Group();
+                const puffGeom = new THREE.SphereGeometry(1, 16, 16);
+                
+                for (let i = 0; i < 6; i++) {
+                    const puff = new THREE.Mesh(puffGeom, cloudMat);
+                    puff.position.set(
+                        (Math.random() - 0.5) * 3.5,
+                        (Math.random() - 0.5) * 1.5,
+                        (Math.random() - 0.5) * 2.5
+                    );
+                    const s = 1.5 + Math.random() * 2.5;
+                    puff.scale.set(s, s * 0.6, s);
+                    group.add(puff);
+                }
+                
+                group.position.set(x, y, z);
+                group.scale.setScalar(scale);
+                scene.add(group);
+                clouds.push({ mesh: group, speed: 0.015 + Math.random() * 0.02 });
+            }
+
+            // Generate initial clouds
+            for (let i = 0; i < 24; i++) {
+                let cx = -120 + Math.random() * 240;
+                if (Math.abs(cx) < 45) cx += Math.sign(cx) * 45;
+                let cy = 35 + Math.random() * 50;
+                if (cy > 55 && cy < 75) cy += 20;
+                createCloud(cx, cy, -38 + (Math.random() - 0.5) * 60, 0.85 + Math.random() * 1.25);
+            }
+
+            // --- Ground Plane (To prevent empty voids) ---
+            const groundGeom = new THREE.PlaneGeometry(1000, 1000);
+            const groundMat = new THREE.MeshStandardMaterial({ color: 0x8eb939, roughness: 1.0 });
+            const ground = new THREE.Mesh(groundGeom, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.y = -0.5;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+        /********************************************************************
+         * 3. PROCEDURAL HIGH-RES PBR TEXTURES
+         ********************************************************************/
+        function createBrickTextures(baseHex, altHex) {
+            const c = document.createElement("canvas");
+            c.width = 512;
+            c.height = 512;
+            const ctx = c.getContext("2d");
+
+            const bumpC = document.createElement("canvas");
+            bumpC.width = 512;
+            bumpC.height = 512;
+            const bCtx = bumpC.getContext("2d");
+
+            ctx.fillStyle = "#c8beb0";
+            ctx.fillRect(0, 0, 512, 512);
+            bCtx.fillStyle = "#222222";
+            bCtx.fillRect(0, 0, 512, 512);
+
+            const rows = 16;
+            const cols = 8;
+            const brickH = 512 / rows;
+            const brickW = 512 / cols;
+            const mortar = 3;
+
+            for (let r = 0; r < rows; r++) {
+                const offset = (r % 2) * (brickW / 2);
+                for (let col = -1; col <= cols; col++) {
+                    const x = col * brickW + offset;
+                    const y = r * brickH;
+
+                    ctx.fillStyle = Math.random() > 0.35 ? baseHex : altHex;
+                    ctx.fillRect(x + mortar, y + mortar, brickW - mortar * 2, brickH - mortar * 2);
+
+                    ctx.fillStyle = `rgba(0,0,0,${(Math.random() * 0.14).toFixed(2)})`;
+                    ctx.fillRect(x + mortar, y + mortar, brickW - mortar * 2, brickH - mortar * 2);
+
+                    const gray = 185 + Math.floor(Math.random() * 55);
+                    bCtx.fillStyle = `rgb(${gray},${gray},${gray})`;
+                    bCtx.fillRect(x + mortar, y + mortar, brickW - mortar * 2, brickH - mortar * 2);
+                }
+            }
+
+            const map = new THREE.CanvasTexture(c);
+            map.wrapS = THREE.RepeatWrapping;
+            map.wrapT = THREE.RepeatWrapping;
+            map.repeat.set(3.5, 5.5);
+
+            const bumpMap = new THREE.CanvasTexture(bumpC);
+            bumpMap.wrapS = THREE.RepeatWrapping;
+            bumpMap.wrapT = THREE.RepeatWrapping;
+            bumpMap.repeat.set(3.5, 5.5);
+
+            return { map, bumpMap };
+        }
+
+        function createPavedTexture() {
+            const c = document.createElement("canvas");
+            c.width = 512;
+            c.height = 512;
+            const ctx = c.getContext("2d");
+
+            ctx.fillStyle = "#8d959e";
+            ctx.fillRect(0, 0, 512, 512);
+
+            const tileH = 64;
+            const tileW = 96;
+            for (let y = 0; y < 512; y += tileH) {
+                const shift = ((y / tileH) % 2) * (tileW / 2);
+                for (let x = -tileW; x < 512; x += tileW) {
+                    const shade = 128 + Math.floor(Math.random() * 26);
+                    ctx.fillStyle = `rgb(${shade}, ${shade + 6}, ${shade + 13})`;
+                    ctx.fillRect(x + shift + 3, y + 3, tileW - 6, tileH - 6);
+
+                    ctx.strokeStyle = "#5b626a";
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(x + shift + 2, y + 2, tileW - 4, tileH - 4);
+                }
+            }
+
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(42, 5);
+            return tex;
+        }
+
+        function createGrassTexture() {
+            const c = document.createElement("canvas");
+            c.width = 512;
+            c.height = 512;
+            const ctx = c.getContext("2d");
+
+            const grad = ctx.createLinearGradient(0, 0, 512, 512);
+            grad.addColorStop(0, "#8eb939");
+            grad.addColorStop(0.5, "#9ec642");
+            grad.addColorStop(1, "#7da832");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 512, 512);
+
+            for (let i = 0; i < 4500; i++) {
+                const gx = Math.random() * 512;
+                const gy = Math.random() * 512;
+                ctx.fillStyle = Math.random() > 0.45 ? "rgba(182, 218, 72, 0.35)" : "rgba(95, 138, 34, 0.32)";
+                ctx.fillRect(gx, gy, 2, 6);
+            }
+
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(22, 5);
+            return tex;
+        }
+
+        function createAsphaltTexture() {
+            const c = document.createElement("canvas");
+            c.width = 512;
+            c.height = 512;
+            const ctx = c.getContext("2d");
+            ctx.fillStyle = "#6c7580";
+            ctx.fillRect(0, 0, 512, 512);
+
+            for (let i = 0; i < 6000; i++) {
+                const v = 95 + Math.floor(Math.random() * 35);
+                ctx.fillStyle = `rgba(${v},${v + 4},${v + 9},0.28)`;
+                ctx.fillRect(Math.random() * 512, Math.random() * 512, 3, 3);
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(36, 4);
+            return tex;
+        }
+
+        function createWarmWindowTexture(isStorefront = false) {
+            const c = document.createElement("canvas");
+            c.width = 256;
+            c.height = 256;
+            const ctx = c.getContext("2d");
+
+            const grad = ctx.createLinearGradient(0, 0, 0, 256);
+            grad.addColorStop(0, "#4a321f");
+            grad.addColorStop(0.45, "#9c6b3b");
+            grad.addColorStop(1, "#e8aa64");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 256, 256);
+
+            ctx.fillStyle = "rgba(52, 32, 18, 0.55)";
+            for (let sy = 55; sy < 210; sy += 42) {
+                ctx.fillRect(24, sy, 208, 6);
+                for (let bx = 30; bx < 215; bx += 18) {
+                    const bh = 18 + (bx % 14);
+                    ctx.fillRect(bx, sy - bh, 12, bh);
+                }
+            }
+
+            const rad = ctx.createRadialGradient(128, 120, 8, 128, 130, 110);
+            rad.addColorStop(0, "rgba(255, 248, 215, 0.98)");
+            rad.addColorStop(0.45, "rgba(255, 198, 105, 0.65)");
+            rad.addColorStop(1, "rgba(255, 160, 60, 0)");
+            ctx.fillStyle = rad;
+            ctx.fillRect(0, 0, 256, 256);
+
+            if (isStorefront) {
+                ctx.fillStyle = "#3f6a2e";
+                for (let px = 36; px < 230; px += 52) {
+                    ctx.beginPath();
+                    ctx.arc(px, 218, 18, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = "#5d3a24";
+                    ctx.fillRect(px - 10, 226, 20, 24);
+                    ctx.fillStyle = "#4c7c38";
+                }
+            }
+
+            ctx.strokeStyle = "#262c32";
+            ctx.lineWidth = 14;
+            ctx.strokeRect(0, 0, 256, 256);
+            ctx.lineWidth = 7;
+            ctx.beginPath();
+            if (isStorefront) {
+                ctx.moveTo(85, 0); ctx.lineTo(85, 256);
+                ctx.moveTo(170, 0); ctx.lineTo(170, 256);
+                ctx.moveTo(0, 68); ctx.lineTo(256, 68);
+            } else {
+                ctx.moveTo(0, 128); ctx.lineTo(256, 128);
+                ctx.moveTo(128, 0); ctx.lineTo(128, 256);
+            }
+            ctx.stroke();
+
+            ctx.fillStyle = "rgba(255,255,255,0.12)";
+            ctx.beginPath();
+            ctx.moveTo(20, 0);
+            ctx.lineTo(75, 0);
+            ctx.lineTo(0, 160);
+            ctx.lineTo(0, 95);
+            ctx.closePath();
+            ctx.fill();
+
+            return new THREE.CanvasTexture(c);
+        }
+
+        const upperWindowTex = createWarmWindowTexture(false);
+        const storefrontWindowTex = createWarmWindowTexture(true);
+
+        function createStoreSignTexture(title, number) {
+            const c = document.createElement("canvas");
+            c.width = 1024;
+            c.height = 192;
+            const ctx = c.getContext("2d");
+            ctx.fillStyle = "#1c2228";
+            ctx.fillRect(0, 0, 1024, 192);
+            ctx.strokeStyle = "#d97706";
+            ctx.lineWidth = 10;
+            ctx.strokeRect(10, 10, 1004, 172);
+
+            ctx.fillStyle = "#fbbf24";
+            ctx.font = "bold 64px 'Space Grotesk', sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(`${number} • ${title}`, 512, 100);
+            return new THREE.CanvasTexture(c);
+        }
+
+        /********************************************************************
+         * 4. FOREGROUND LAWN, COBBLESTONE PROMENADE, CURBS, CROSSWALKS & ROAD
+         ********************************************************************/
+        const grassTex = createGrassTexture();
+        const grassMat = new THREE.MeshStandardMaterial({
+            map: grassTex,
+            roughness: 0.88,
+            metalness: 0.02
+        });
+
+        const grassForeground = new THREE.Mesh(new THREE.BoxGeometry(290, 0.65, 28), grassMat);
+        grassForeground.position.set(0, -0.08, 24.5);
+        grassForeground.receiveShadow = true;
+        scene.add(grassForeground);
+
+        const pavedTex = createPavedTexture();
+        const sidewalkMat = new THREE.MeshStandardMaterial({
+            map: pavedTex,
+            roughness: 0.8,
+            metalness: 0.05
+        });
+        const frontSidewalk = new THREE.Mesh(new THREE.BoxGeometry(290, 0.48, 8.2), sidewalkMat);
+        frontSidewalk.position.set(0, -0.14, 9.2);
+        frontSidewalk.receiveShadow = true;
+        scene.add(frontSidewalk);
+
+        const curbMat = new THREE.MeshStandardMaterial({ color: 0x9aa2ab, roughness: 0.75 });
+        const frontCurb = new THREE.Mesh(new THREE.BoxGeometry(290, 0.54, 0.45), curbMat);
+        frontCurb.position.set(0, -0.1, 5.1);
+        frontCurb.receiveShadow = true;
+        scene.add(frontCurb);
+
+        const asphaltTex = createAsphaltTexture();
+        const roadMat = new THREE.MeshStandardMaterial({
+            map: asphaltTex,
+            roughness: 0.72,
+            metalness: 0.08
+        });
+        const roadMesh = new THREE.Mesh(new THREE.BoxGeometry(290, 0.3, 11.8), roadMat);
+        roadMesh.position.set(0, -0.25, -0.8);
+        roadMesh.receiveShadow = true;
+        scene.add(roadMesh);
+
+        const dashMat = new THREE.MeshBasicMaterial({ color: 0xdce3ec });
+        for (let x = -130; x <= 130; x += 7.5) {
+            const dash = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 0.2), dashMat);
+            dash.rotation.x = -Math.PI / 2;
+            dash.position.set(x, -0.08, -0.8);
+            scene.add(dash);
+        }
+
+        const crosswalkPositions = [-39, 13, 65];
+        crosswalkPositions.forEach((cx) => {
+            for (let z = -5.6; z <= 3.8; z += 1.15) {
+                const stripe = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 0.55), dashMat);
+                stripe.rotation.x = -Math.PI / 2;
+                stripe.position.set(cx, -0.07, z);
+                scene.add(stripe);
+            }
+        });
+
+        const backSidewalk = new THREE.Mesh(new THREE.BoxGeometry(290, 0.52, 7.2), sidewalkMat);
+        backSidewalk.position.set(0, -0.1, -9.8);
+        backSidewalk.receiveShadow = true;
+        scene.add(backSidewalk);
+
+        const backCurb = new THREE.Mesh(new THREE.BoxGeometry(290, 0.56, 0.45), curbMat);
+        backCurb.position.set(0, -0.08, -6.3);
+        backCurb.receiveShadow = true;
+        scene.add(backCurb);
+
+        /********************************************************************
+         * 5. PHOTOREALISTIC BROWNSTONE ROW BUILDINGS GENERATOR
+         ********************************************************************/
+        const redBrickTex = createBrickTextures("#8e3722", "#792b18");
+        const brownBrickTex = createBrickTextures("#7c3d25", "#68301b");
+        const tanBrickTex = createBrickTextures("#9b5533", "#844425");
+
+        const brickRedMat = new THREE.MeshStandardMaterial({
+            map: redBrickTex.map,
+            bumpMap: redBrickTex.bumpMap,
+            bumpScale: 0.08,
+            roughness: 0.85
+        });
+        const brickBrownMat = new THREE.MeshStandardMaterial({
+            map: brownBrickTex.map,
+            bumpMap: brownBrickTex.bumpMap,
+            bumpScale: 0.08,
+            roughness: 0.85
+        });
+        const brickTanMat = new THREE.MeshStandardMaterial({
+            map: tanBrickTex.map,
+            bumpMap: tanBrickTex.bumpMap,
+            bumpScale: 0.08,
+            roughness: 0.85
+        });
+
+        const creamStoneMat = new THREE.MeshStandardMaterial({ color: 0xdccab0, roughness: 0.72 });
+        const darkTrimMat = new THREE.MeshStandardMaterial({ color: 0x283036, roughness: 0.55, metalness: 0.2 });
+        const ironBlackMat = new THREE.MeshStandardMaterial({ color: 0x1a1e22, roughness: 0.45, metalness: 0.65 });
+        
+        // Upgraded Window Materials for dusk emission glowing
+        const upperWindowMat = new THREE.MeshStandardMaterial({ map: upperWindowTex, emissiveMap: upperWindowTex, emissive: 0xffa34d, emissiveIntensity: 0 });
+        const storeWindowMat = new THREE.MeshStandardMaterial({ map: storefrontWindowTex, emissiveMap: storefrontWindowTex, emissive: 0xffa34d, emissiveIntensity: 0 });
+
+        const interactiveBuildingMeshes = [];
+        const buildingGroups = {}; // Used for hover lifting
+
+        function createBrownstoneBlock(centerX, zPos, buildingData = null, variant = 0) {
+            const group = new THREE.Group();
+            group.position.set(centerX, 0, zPos);
+            
+            if (buildingData) {
+                buildingGroups[buildingData.id] = group;
+            }
+
+            const width = 24;
+            const depth = 12.5;
+            const baseHeight = variant % 2 === 0 ? 19.8 : 17.6;
+            const subWidth = width / 2;
+
+            for (let side = 0; side < 2; side++) {
+                const subX = (side === 0 ? -1 : 1) * (subWidth / 2);
+                const matChoice = (side + variant) % 3;
+                const mainWallMat = matChoice === 0 ? brickRedMat : (matChoice === 1 ? brickBrownMat : brickTanMat);
+                const subH = side === 0 ? baseHeight : baseHeight - (variant % 2 === 0 ? 1.4 : -1.2);
+
+                const body = new THREE.Mesh(new THREE.BoxGeometry(subWidth - 0.12, subH, depth), mainWallMat);
+                body.position.set(subX, subH / 2, 0);
+                body.castShadow = true;
+                body.receiveShadow = true;
+                if (buildingData) body.userData = { buildingId: buildingData.id };
+                group.add(body);
+                if (buildingData) interactiveBuildingMeshes.push(body);
+
+                for (let qy = 4.3; qy < subH - 1.1; qy += 0.95) {
+                    const isLong = Math.floor(qy) % 2 === 0;
+                    const qW = isLong ? 0.82 : 0.48;
+                    const quoinL = new THREE.Mesh(new THREE.BoxGeometry(qW, 0.58, 0.36), creamStoneMat);
+                    quoinL.position.set(subX - subWidth / 2 + qW / 2, qy, depth / 2 + 0.06);
+                    group.add(quoinL);
+
+                    const quoinR = new THREE.Mesh(new THREE.BoxGeometry(qW, 0.58, 0.36), creamStoneMat);
+                    quoinR.position.set(subX + subWidth / 2 - qW / 2, qy, depth / 2 + 0.06);
+                    group.add(quoinR);
+                }
+
+                const cornice = new THREE.Mesh(new THREE.BoxGeometry(subWidth + 0.35, 0.95, depth + 0.95), darkTrimMat);
+                cornice.position.set(subX, subH + 0.35, 0.25);
+                cornice.castShadow = true;
+                group.add(cornice);
+
+                const subCornice = new THREE.Mesh(new THREE.BoxGeometry(subWidth + 0.15, 0.45, depth + 0.5), creamStoneMat);
+                subCornice.position.set(subX, subH - 0.25, 0.15);
+                group.add(subCornice);
+
+                for (let bx = -subWidth / 2 + 1; bx <= subWidth / 2 - 1; bx += 2.0) {
+                    const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.55, 0.45), darkTrimMat);
+                    bracket.position.set(subX + bx, subH + 0.1, depth / 2 + 0.48);
+                    group.add(bracket);
+                }
+
+                const storeBase = new THREE.Mesh(new THREE.BoxGeometry(subWidth, 3.9, depth + 0.35), darkTrimMat);
+                storeBase.position.set(subX, 1.95, 0.12);
+                if (buildingData) {
+                    storeBase.userData = { buildingId: buildingData.id };
+                    interactiveBuildingMeshes.push(storeBase);
+                }
+                group.add(storeBase);
+
+                const storeWin = new THREE.Mesh(new THREE.PlaneGeometry(subWidth - 3.1, 2.65), storeWindowMat);
+                storeWin.position.set(subX + 0.85, 2.0, depth / 2 + 0.32);
+                group.add(storeWin);
+
+                const pilasterL = new THREE.Mesh(new THREE.BoxGeometry(0.55, 3.9, 0.48), creamStoneMat);
+                pilasterL.position.set(subX - subWidth / 2 + 0.3, 1.95, depth / 2 + 0.2);
+                group.add(pilasterL);
+
+                const pilasterR = pilasterL.clone();
+                pilasterR.position.x = subX + subWidth / 2 - 0.3;
+                group.add(pilasterR);
+
+                const doorColor = side === 0 ? 0x651d27 : 0x26343f;
+                const door = new THREE.Mesh(
+                    new THREE.BoxGeometry(1.5, 2.85, 0.22),
+                    new THREE.MeshStandardMaterial({ color: doorColor, roughness: 0.5 })
+                );
+                door.position.set(subX - subWidth / 2 + 1.55, 1.85, depth / 2 + 0.26);
+                group.add(door);
+
+                const transom = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.55), upperWindowMat);
+                transom.position.set(subX - subWidth / 2 + 1.55, 3.52, depth / 2 + 0.32);
+                group.add(transom);
+
+                const stoop1 = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.5, 1.35), creamStoneMat);
+                stoop1.position.set(subX - subWidth / 2 + 1.55, 0.25, depth / 2 + 0.72);
+                group.add(stoop1);
+
+                const stoop2 = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.28, 0.85), creamStoneMat);
+                stoop2.position.set(subX - subWidth / 2 + 1.55, 0.55, depth / 2 + 0.5);
+                group.add(stoop2);
+
+                const awningHex = buildingData
+                    ? (side === 0 ? buildingData.awningColor : (buildingData.awningColor === 0x991f2e ? 0xe6dac1 : 0x991f2e))
+                    : (side === 0 ? 0x991f2e : 0xe6dac1);
+                const awningMat = new THREE.MeshStandardMaterial({ color: awningHex, roughness: 0.78 });
+                const awning = new THREE.Mesh(new THREE.BoxGeometry(subWidth - 2.5, 0.22, 2.35), awningMat);
+                awning.position.set(subX + 0.85, 3.65, depth / 2 + 1.15);
+                awning.rotation.x = 0.36;
+                awning.castShadow = true;
+                if (buildingData) {
+                    awning.userData = { buildingId: buildingData.id };
+                    interactiveBuildingMeshes.push(awning);
+                }
+                group.add(awning);
+
+                const valance = new THREE.Mesh(new THREE.BoxGeometry(subWidth - 2.5, 0.36, 0.12), awningMat);
+                valance.position.set(subX + 0.85, 3.12, depth / 2 + 2.22);
+                group.add(valance);
+
+                const hasBayColumn = (side === 0 && variant % 2 === 0) || (side === 1 && variant % 2 === 1);
+                if (hasBayColumn) {
+                    const bayColX = subX - 3.15;
+                    const bayHeight = subH - 4.3;
+                    const bayVolume = new THREE.Mesh(new THREE.BoxGeometry(3.25, bayHeight, 1.15), creamStoneMat);
+                    bayVolume.position.set(bayColX, 3.9 + bayHeight / 2, depth / 2 + 0.45);
+                    bayVolume.castShadow = true;
+                    group.add(bayVolume);
+                }
+
+                for (let fl = 0; fl < 3; fl++) {
+                    const wy = 5.75 + fl * 4.15;
+                    if (wy > subH - 1.7) continue;
+
+                    for (let col = -1; col <= 1; col++) {
+                        const wx = subX + col * 3.15;
+                        const isBayWin = hasBayColumn && col === -1;
+                        const zOffset = isBayWin ? depth / 2 + 1.05 : depth / 2 + 0.14;
+
+                        const wPane = new THREE.Mesh(new THREE.PlaneGeometry(1.62, 2.45), upperWindowMat);
+                        wPane.position.set(wx, wy, zOffset);
+                        group.add(wPane);
+
+                        const lintel = new THREE.Mesh(new THREE.BoxGeometry(1.92, 0.34, 0.32), creamStoneMat);
+                        lintel.position.set(wx, wy + 1.34, zOffset + 0.04);
+                        group.add(lintel);
+
+                        const sill = new THREE.Mesh(new THREE.BoxGeometry(1.88, 0.24, 0.36), creamStoneMat);
+                        sill.position.set(wx, wy - 1.28, zOffset + 0.06);
+                        group.add(sill);
+
+                        if ((fl + col) % 2 === 0) {
+                            const planter = new THREE.Mesh(
+                                new THREE.BoxGeometry(1.4, 0.28, 0.28),
+                                new THREE.MeshStandardMaterial({ color: 0x4b6e35, roughness: 0.9 })
+                            );
+                            planter.position.set(wx, wy - 1.05, zOffset + 0.15);
+                            group.add(planter);
+                        }
+                    }
+                }
+
+                const feX = subX + (side === 0 ? 1.65 : -0.6);
+                for (let fl = 0; fl < 3; fl++) {
+                    const fy = 4.6 + fl * 4.15;
+                    if (fy > subH - 2) continue;
+
+                    const platform = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.14, 1.45), ironBlackMat);
+                    platform.position.set(feX, fy, depth / 2 + 0.78);
+                    platform.castShadow = true;
+                    group.add(platform);
+
+                    const topRail = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.08, 0.08), ironBlackMat);
+                    topRail.position.set(feX, fy + 0.92, depth / 2 + 1.45);
+                    group.add(topRail);
+
+                    for (let rx = -2.1; rx <= 2.1; rx += 0.42) {
+                        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.9, 0.05), ironBlackMat);
+                        bar.position.set(feX + rx, fy + 0.46, depth / 2 + 1.45);
+                        group.add(bar);
+                    }
+
+                    if (fl < 2) {
+                        const stairDir = fl % 2 === 0 ? 1 : -1;
+                        const stair = new THREE.Mesh(new THREE.BoxGeometry(0.18, 4.75, 0.42), ironBlackMat);
+                        stair.position.set(feX, fy + 2.1, depth / 2 + 1.02);
+                        stair.rotation.z = stairDir * 0.62;
+                        stair.castShadow = true;
+                        group.add(stair);
+
+                        const handrail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 4.75, 0.08), ironBlackMat);
+                        handrail.position.set(feX, fy + 2.55, depth / 2 + 1.25);
+                        handrail.rotation.z = stairDir * 0.62;
+                        group.add(handrail);
+                    }
+                }
+            }
+
+            if (variant % 2 === 0 || buildingData) {
+                const tankGroup = new THREE.Group();
+                const legs = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.45, 2.3, 8, 1, true), ironBlackMat);
+                legs.position.y = 1.15;
+                tankGroup.add(legs);
+
+                const barrel = new THREE.Mesh(
+                    new THREE.CylinderGeometry(1.55, 1.55, 2.9, 16),
+                    new THREE.MeshStandardMaterial({ color: 0x624936, roughness: 0.85 })
+                );
+                barrel.position.y = 3.25;
+                barrel.castShadow = true;
+                tankGroup.add(barrel);
+
+                [2.3, 3.2, 4.1].forEach((hy) => {
+                    const hoop = new THREE.Mesh(new THREE.CylinderGeometry(1.58, 1.58, 0.1, 16), ironBlackMat);
+                    hoop.position.y = hy;
+                    tankGroup.add(hoop);
+                });
+
+                const roofCone = new THREE.Mesh(
+                    new THREE.ConeGeometry(1.72, 1.1, 16),
+                    new THREE.MeshStandardMaterial({ color: 0x382b21, roughness: 0.8 })
+                );
+                roofCone.position.y = 5.25;
+                tankGroup.add(roofCone);
+
+                tankGroup.position.set(variant % 2 === 0 ? -2.8 : 3.2, baseHeight + 0.35, -1.6);
+                group.add(tankGroup);
+            }
+
+            if (buildingData) {
+                const signTex = createStoreSignTexture(buildingData.storefrontTitle, buildingData.number);
+                const signBoard = new THREE.Mesh(
+                    new THREE.BoxGeometry(12.8, 2.4, 0.38),
+                    new THREE.MeshBasicMaterial({ map: signTex })
+                );
+                signBoard.position.set(0, 4.65, depth / 2 + 0.52);
+                signBoard.userData = { buildingId: buildingData.id };
+                interactiveBuildingMeshes.push(signBoard);
+                group.add(signBoard);
+
+                const storeLight = new THREE.PointLight(0xffb86c, 0.85, 14);
+                storeLight.position.set(0, 2.8, depth / 2 + 2.2);
+                group.add(storeLight);
+            }
+
+            scene.add(group);
+            return group;
+        }
+
+        createBrownstoneBlock(-104, -19.2, null, 1);
+        createBrownstoneBlock(-78, -19.2, null, 2);
+
+        BUILDINGS_DATA.forEach((bData, idx) => {
+            createBrownstoneBlock(bData.xPos, -19.2, bData, idx);
+        });
+
+        createBrownstoneBlock(78, -19.2, null, 1);
+        createBrownstoneBlock(104, -19.2, null, 0);
+
+        // Hover Spotlight (Follows hovered building)
+        const hoverSpotlight = new THREE.SpotLight(0xfbbf24, 0, 80, 0.6, 0.5, 1);
+        hoverSpotlight.position.set(0, 35, 15);
+        scene.add(hoverSpotlight);
+        scene.add(hoverSpotlight.target);
+
+        /********************************************************************
+         * 6. STREET PROPS: VINTAGE STREETLAMPS, FIRE HYDRANTS, BENCHES & TREES
+         ********************************************************************/
+        const lampGlowBulbs = [];
+        function createStreetLamp(x, z) {
+            const lamp = new THREE.Group();
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.18, 5.4, 10), ironBlackMat);
+            pole.position.y = 2.7;
+            pole.castShadow = true;
+            lamp.add(pole);
+
+            const base = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.35, 0.7, 10), ironBlackMat);
+            base.position.y = 0.35;
+            lamp.add(base);
+
+            const lantern = new THREE.Mesh(
+                new THREE.SphereGeometry(0.38, 14, 14),
+                new THREE.MeshBasicMaterial({ color: 0xffe9a6 })
+            );
+            lantern.position.y = 5.55;
+            lamp.add(lantern);
+            lampGlowBulbs.push(lantern);
+
+            const cap = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.3, 12), ironBlackMat);
+            cap.position.y = 5.92;
+            lamp.add(cap);
+
+            lamp.position.set(x, 0, z);
+            scene.add(lamp);
+        }
+
+        function createFireHydrant(x, z) {
+            const h = new THREE.Group();
+            const redIron = new THREE.MeshStandardMaterial({ color: 0xb8252a, roughness: 0.45, metalness: 0.3 });
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.25, 0.85, 10), redIron);
+            body.position.y = 0.42;
+            body.castShadow = true;
+            h.add(body);
+
+            const cap = new THREE.Mesh(new THREE.SphereGeometry(0.23, 10, 10), redIron);
+            cap.position.y = 0.85;
+            h.add(cap);
+
+            h.position.set(x, 0, z);
+            scene.add(h);
+        }
+
+        function createParkBench(x, z, rotY = 0) {
+            const bench = new THREE.Group();
+            const woodMat = new THREE.MeshStandardMaterial({ color: 0x7c5032, roughness: 0.8 });
+            const seat = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.12, 0.65), woodMat);
+            seat.position.y = 0.55;
+            seat.castShadow = true;
+            bench.add(seat);
+
+            const back = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.55, 0.1), woodMat);
+            back.position.set(0, 0.9, -0.28);
+            back.rotation.x = -0.15;
+            bench.add(back);
+
+            [-0.95, 0.95].forEach((lx) => {
+                const leg = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.55, 0.65), ironBlackMat);
+                leg.position.set(lx, 0.28, 0);
+                bench.add(leg);
+            });
+
+            bench.position.set(x, 0, z);
+            bench.rotation.y = rotY;
+            scene.add(bench);
+        }
+
+        for (let lx = -65; lx <= 65; lx += 26) {
+            createStreetLamp(lx + 9, -6.8);
+            if (lx % 52 === 0) createFireHydrant(lx - 7, -6.8);
+        }
+        createStreetLamp(-28, 5.6);
+        createStreetLamp(24, 5.6);
+        createParkBench(-36, 12.2, Math.PI);
+        createParkBench(6, 12.2, Math.PI);
+
+        const trees = [];
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b472c, roughness: 0.9 });
+        const canopyMat1 = new THREE.MeshStandardMaterial({ color: 0x77b352, roughness: 0.78 });
+        const canopyMat2 = new THREE.MeshStandardMaterial({ color: 0x89c360, roughness: 0.75 });
+        const canopyMat3 = new THREE.MeshStandardMaterial({ color: 0x6aa346, roughness: 0.8 });
+
+        function createStylizedTree(x, z, scale = 1) {
+            const treeGroup = new THREE.Group();
+
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 1.35, 6.4, 12), trunkMat);
+            trunk.position.y = 3.2;
+            trunk.castShadow = true;
+            trunk.receiveShadow = true;
+            treeGroup.add(trunk);
+
+            for (let r = 0; r < 5; r++) {
+                const angle = (r / 5) * Math.PI * 2;
+                const root = new THREE.Mesh(new THREE.ConeGeometry(0.38, 1.8, 8), trunkMat);
+                root.position.set(Math.cos(angle) * 0.85, 0.75, Math.sin(angle) * 0.85);
+                root.rotation.z = Math.cos(angle) * -0.45;
+                root.rotation.x = Math.sin(angle) * 0.45;
+                treeGroup.add(root);
+            }
+
+            for (let b = 0; b < 4; b++) {
+                const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.44, 3.5, 8), trunkMat);
+                branch.position.set((b - 1.5) * 0.75, 5.6, (b % 2 === 0 ? 0.45 : -0.45));
+                branch.rotation.z = (b - 1.5) * -0.38;
+                treeGroup.add(branch);
+            }
+
+            const canopyGroup = new THREE.Group();
+            const puffs = [
+                [0, 9.1, 0, 3.3, canopyMat2],
+                [-2.5, 7.8, 0.8, 2.6, canopyMat1],
+                [2.6, 7.7, 0.6, 2.7, canopyMat1],
+                [-1.7, 6.9, -1.5, 2.4, canopyMat3],
+                [1.9, 7.1, -1.4, 2.5, canopyMat1],
+                [0, 7.4, 2.1, 2.4, canopyMat2],
+                [-3.3, 6.5, -0.2, 2.0, canopyMat3],
+                [3.2, 6.4, -0.3, 2.1, canopyMat2],
+                [0.8, 8.6, -1.2, 2.5, canopyMat2]
+            ];
+            puffs.forEach(([px, py, pz, r, mat]) => {
+                const sphere = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 20), mat);
+                sphere.position.set(px, py, pz);
+                sphere.castShadow = true;
+                sphere.receiveShadow = true;
+                canopyGroup.add(sphere);
+            });
+
+            treeGroup.add(canopyGroup);
+            treeGroup.position.set(x, 0, z);
+            treeGroup.scale.setScalar(scale);
+            scene.add(treeGroup);
+            trees.push({ group: canopyGroup, phase: Math.random() * Math.PI * 2 });
+        }
+
+        createStylizedTree(-62, 15.2, 1.25);
+        createStylizedTree(-18, 16.5, 1.18);
+        createStylizedTree(31, 14.8, 1.26);
+        createStylizedTree(72, 15.8, 1.12);
+
+        /********************************************************************
+         * 7. ARTICULATED 3D PEDESTRIANS WALKING ON SIDEWALKS & CROSSWALKS
+         ********************************************************************/
+        const pedestrians = [];
+        const skinTones = [0xf5d0b5, 0xe0ac8b, 0xc6865c, 0x8d5534, 0xf7dcc4];
+        const coatColors = [
+            0x1e293b, 0x991b1b, 0x0f766e, 0xd97706, 0x3730a3,
+            0x4b5563, 0xbe185d, 0x166534, 0x2563eb, 0x7c2d12
+        ];
+        const pantsColors = [0x1e242b, 0x2b394a, 0x4b3f35, 0x334155, 0x18181b];
+        const hairColors = [0x1a1615, 0x4a3222, 0x8c5a32, 0xd4a359, 0x2c221e];
+
+        function createPedestrian(config) {
+            const person = new THREE.Group();
+
+            const skinMat = new THREE.MeshStandardMaterial({ color: config.skin, roughness: 0.65 });
+            const coatMat = new THREE.MeshStandardMaterial({ color: config.coat, roughness: 0.75 });
+            const pantsMat = new THREE.MeshStandardMaterial({ color: config.pants, roughness: 0.8 });
+            const hairMat = new THREE.MeshStandardMaterial({ color: config.hair, roughness: 0.7 });
+            const shoeMat = new THREE.MeshStandardMaterial({ color: 0x1c1917, roughness: 0.6 });
+
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.68, 0.26), coatMat);
+            torso.position.y = 1.12;
+            torso.castShadow = true;
+            person.add(torso);
+
+            const headGroup = new THREE.Group();
+            headGroup.position.y = 1.64;
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 14), skinMat);
+            head.castShadow = true;
+            headGroup.add(head);
+
+            const hair = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 12, 0, Math.PI * 2, 0, Math.PI * 0.62), hairMat);
+            hair.position.y = 0.02;
+            headGroup.add(hair);
+            person.add(headGroup);
+
+            if (config.hasBackpack) {
+                const pack = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.32, 0.42, 0.16),
+                    new THREE.MeshStandardMaterial({ color: 0x27272a, roughness: 0.7 })
+                );
+                pack.position.set(0, 1.15, -0.19);
+                person.add(pack);
+            }
+
+            function makeArm(side) {
+                const pivot = new THREE.Group();
+                pivot.position.set(side * 0.3, 1.4, 0);
+                const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.065, 0.56, 10), coatMat);
+                sleeve.position.y = -0.26;
+                sleeve.castShadow = true;
+                pivot.add(sleeve);
+
+                const hand = new THREE.Mesh(new THREE.SphereGeometry(0.065, 8, 8), skinMat);
+                hand.position.y = -0.56;
+                pivot.add(hand);
+                return pivot;
+            }
+            const leftArm = makeArm(1);
+            const rightArm = makeArm(-1);
+            person.add(leftArm, rightArm);
+
+            function makeLeg(side) {
+                const pivot = new THREE.Group();
+                pivot.position.set(side * 0.13, 0.78, 0);
+                const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.075, 0.72, 10), pantsMat);
+                leg.position.y = -0.36;
+                leg.castShadow = true;
+                pivot.add(leg);
+
+                const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.1, 0.26), shoeMat);
+                shoe.position.set(0, -0.73, 0.04);
+                pivot.add(shoe);
+                return pivot;
+            }
+            const leftLeg = makeLeg(1);
+            const rightLeg = makeLeg(-1);
+            person.add(leftLeg, rightLeg);
+
+            person.position.set(config.x, 0.16, config.z);
+            person.scale.setScalar(config.scale || 1.0);
+            scene.add(person);
+
+            pedestrians.push({
+                mesh: person,
+                leftArm,
+                rightArm,
+                leftLeg,
+                rightLeg,
+                headGroup,
+                torso,
+                mode: config.mode,
+                dir: config.dir,
+                speed: config.speed,
+                phase: Math.random() * Math.PI * 2,
+                baseZ: config.z,
+                baseX: config.x,
+                minBound: config.minBound,
+                maxBound: config.maxBound
+            });
+        }
+
+        // 1) Pedestrians strolling along the Brownstone Storefront Sidewalk
+        for (let i = 0; i < 13; i++) {
+            const dir = i % 2 === 0 ? 1 : -1;
+            createPedestrian({
+                x: -78 + i * 12.5 + (Math.random() - 0.5) * 4,
+                z: -8.2 - (i % 3) * 1.15,
+                dir,
+                speed: 0.032 + Math.random() * 0.018,
+                mode: "sidewalk",
+                minBound: -95,
+                maxBound: 95,
+                skin: skinTones[i % skinTones.length],
+                coat: coatColors[i % coatColors.length],
+                pants: pantsColors[i % pantsColors.length],
+                hair: hairColors[i % hairColors.length],
+                hasBackpack: i % 3 === 0,
+                scale: 0.94 + Math.random() * 0.14
+            });
+        }
+
+        // 2) Pedestrians walking along the Foreground Cobblestone Promenade
+        for (let i = 0; i < 8; i++) {
+            const dir = i % 2 === 0 ? -1 : 1;
+            createPedestrian({
+                x: -65 + i * 18 + (Math.random() - 0.5) * 5,
+                z: 7.6 + (i % 3) * 1.25,
+                dir,
+                speed: 0.034 + Math.random() * 0.018,
+                mode: "sidewalk",
+                minBound: -92,
+                maxBound: 92,
+                skin: skinTones[(i + 2) % skinTones.length],
+                coat: coatColors[(i + 4) % coatColors.length],
+                pants: pantsColors[(i + 1) % pantsColors.length],
+                hair: hairColors[(i + 3) % hairColors.length],
+                hasBackpack: i % 2 === 0,
+                scale: 0.96 + Math.random() * 0.12
+            });
+        }
+
+        // 3) Pedestrians crossing the street at the Crosswalks
+        crosswalkPositions.forEach((cx, idx) => {
+            createPedestrian({
+                x: cx + (idx % 2 === 0 ? -0.5 : 0.5),
+                z: -6.5 + idx * 4,
+                dir: idx % 2 === 0 ? 1 : -1,
+                speed: 0.036,
+                mode: "crosswalk",
+                minBound: -9.8,
+                maxBound: 9.5,
+                skin: skinTones[idx % skinTones.length],
+                coat: coatColors[(idx + 6) % coatColors.length],
+                pants: pantsColors[idx % pantsColors.length],
+                hair: hairColors[idx % hairColors.length],
+                hasBackpack: true,
+                scale: 1.0
+            });
+        });
+
+        /********************************************************************
+         * 8. REALISTIC MOVING VEHICLES (SEDANS, NYC YELLOW CABS, SUVS)
+         ********************************************************************/
+        const cars = [];
+        const carConfigs = [
+            { color: 0xf5b700, isTaxi: true, type: "sedan" },
+            { color: 0xb91c1c, isTaxi: false, type: "sedan" },
+            { color: 0x1e293b, isTaxi: false, type: "suv" },
+            { color: 0xf5b700, isTaxi: true, type: "sedan" },
+            { color: 0x2563eb, isTaxi: false, type: "sedan" },
+            { color: 0x0f766e, isTaxi: false, type: "suv" },
+            { color: 0xe2e8f0, isTaxi: false, type: "sedan" }
+        ];
+
+        function createCar(x, z, dir, cfg) {
+            const car = new THREE.Group();
+            const bodyMat = new THREE.MeshStandardMaterial({
+                color: cfg.color,
+                roughness: 0.28,
+                metalness: 0.45
+            });
+            const glassMat = new THREE.MeshStandardMaterial({
+                color: 0x1e293b,
+                roughness: 0.15,
+                metalness: 0.8
+            });
+
+            const length = cfg.type === "suv" ? 4.6 : 4.3;
+            const chassis = new THREE.Mesh(new THREE.BoxGeometry(length, 0.92, 2.05), bodyMat);
+            chassis.position.y = 0.76;
+            chassis.castShadow = true;
+            chassis.receiveShadow = true;
+            car.add(chassis);
+
+            const cabinL = cfg.type === "suv" ? 2.9 : 2.35;
+            const cabin = new THREE.Mesh(new THREE.BoxGeometry(cabinL, 0.82, 1.78), bodyMat);
+            cabin.position.set(dir > 0 ? -0.25 : 0.25, 1.56, 0);
+            cabin.castShadow = true;
+            car.add(cabin);
+
+            const windows = new THREE.Mesh(new THREE.BoxGeometry(cabinL + 0.06, 0.62, 1.82), glassMat);
+            windows.position.copy(cabin.position);
+            car.add(windows);
+
+            if (cfg.isTaxi) {
+                const taxiSign = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.65, 0.24, 0.32),
+                    new THREE.MeshBasicMaterial({ color: 0xfffbeb })
+                );
+                taxiSign.position.set(cabin.position.x, 2.08, 0);
+                car.add(taxiSign);
+            }
+
+            const headLightMat = new THREE.MeshBasicMaterial({ color: 0xfff7c2 });
+            const tailLightMat = new THREE.MeshBasicMaterial({ color: 0xff2626 });
+
+            const frontX = dir > 0 ? length / 2 + 0.02 : -length / 2 - 0.02;
+            const backX = -frontX;
+
+            const hl1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.24, 0.38), headLightMat);
+            hl1.position.set(frontX, 0.82, 0.68);
+            const hl2 = hl1.clone();
+            hl2.position.z = -0.68;
+            car.add(hl1, hl2);
+
+            const tl1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.24, 0.42), tailLightMat);
+            tl1.position.set(backX, 0.82, 0.68);
+            const tl2 = tl1.clone();
+            tl2.position.z = -0.68;
+            car.add(tl1, tl2);
+
+            const wheelGeom = new THREE.CylinderGeometry(0.42, 0.42, 0.32, 16);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x171717, roughness: 0.8 });
+            const wheels = [];
+            [[-1.35, 0.98], [1.35, 0.98], [-1.35, -0.98], [1.35, -0.98]].forEach(([wx, wz]) => {
+                const w = new THREE.Mesh(wheelGeom, wheelMat);
+                w.rotation.x = Math.PI / 2;
+                w.position.set(wx, 0.42, wz);
+                car.add(w);
+                wheels.push(w);
+            });
+
+            car.position.set(x, 0, z);
+            scene.add(car);
+            cars.push({
+                mesh: car,
+                wheels,
+                dir,
+                speed: 0.15 + Math.random() * 0.1
+            });
+        }
+
+        for (let i = 0; i < 6; i++) {
+            createCar(-115 + i * 44, 2.1, 1, carConfigs[i % carConfigs.length]);
+            createCar(-95 + i * 44, -3.6, -1, carConfigs[(i + 3) % carConfigs.length]);
+        }
+
+        /********************************************************************
+         * 8B. REALISTIC ARTICULATED 3D AVATAR OF ADITYA GUPTA (YOUR TOUR GUIDE)
+         *     Matches uploaded image: Dark patterned denim jacket with silver
+         *     buttons & chest pockets, coral-red graphic tee, blue jeans,
+         *     black lace boots, styled dark hair, and smooth multi-jointed rig.
+         ********************************************************************/
+        function createDenimJacketTexture() {
+            const c = document.createElement("canvas");
+            c.width = 256;
+            c.height = 256;
+            const ctx = c.getContext("2d");
+
+            // Deep navy/slate denim base
+            ctx.fillStyle = "#263347";
+            ctx.fillRect(0, 0, 256, 256);
+
+            // Subtle tonal abstract camo/acid-wash patches like the reference jacket
+            const patchColors = ["rgba(68, 86, 114, 0.55)", "rgba(30, 41, 59, 0.65)", "rgba(82, 102, 132, 0.4)"];
+            for (let i = 0; i < 42; i++) {
+                ctx.fillStyle = patchColors[i % patchColors.length];
+                ctx.beginPath();
+                const px = Math.random() * 256;
+                const py = Math.random() * 256;
+                ctx.ellipse(px, py, 14 + Math.random() * 24, 8 + Math.random() * 16, Math.random() * Math.PI, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Denim twill weave lines
+            ctx.strokeStyle = "rgba(255,255,255,0.04)";
+            ctx.lineWidth = 1;
+            for (let i = -256; i < 512; i += 4) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i + 256, 256);
+                ctx.stroke();
+            }
+
+            // Contrast stitching lines
+            ctx.strokeStyle = "rgba(148, 163, 184, 0.45)";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(8, 8, 240, 240);
+
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            return tex;
+        }
+
+        function createCoralShirtTexture() {
+            const c = document.createElement("canvas");
+            c.width = 256;
+            c.height = 256;
+            const ctx = c.getContext("2d");
+
+            // Coral red-orange tee base
+            ctx.fillStyle = "#f25c48";
+            ctx.fillRect(0, 0, 256, 256);
+
+            // Soft pink/lavender graphic motif in center chest (matching reference)
+            ctx.fillStyle = "#f9a8d4";
+            ctx.beginPath();
+            ctx.arc(128, 118, 42, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = "#f25c48";
+            ctx.font = "bold 22px 'Inter', sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText("AG", 128, 126);
+
+            return new THREE.CanvasTexture(c);
+        }
+
+        function createJeansTexture() {
+            const c = document.createElement("canvas");
+            c.width = 256;
+            c.height = 256;
+            const ctx = c.getContext("2d");
+
+            const grad = ctx.createLinearGradient(0, 0, 256, 256);
+            grad.addColorStop(0, "#243b61");
+            grad.addColorStop(0.5, "#2c4875");
+            grad.addColorStop(1, "#1e3252");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 256, 256);
+
+            ctx.fillStyle = "rgba(255,255,255,0.03)";
+            for (let i = 0; i < 1800; i++) {
+                ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 4);
+            }
+            return new THREE.CanvasTexture(c);
+        }
+
+        const adityaInteractiveMeshes = [];
+
+        function createAdityaGuideCharacter() {
+            const root = new THREE.Group();
+
+            // Materials tailored to the reference photo
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xe5ad8c, roughness: 0.58, metalness: 0.04 });
+            const jacketMat = new THREE.MeshStandardMaterial({ map: createDenimJacketTexture(), roughness: 0.72, metalness: 0.08 });
+            const shirtMat = new THREE.MeshStandardMaterial({ map: createCoralShirtTexture(), roughness: 0.78 });
+            const jeansMat = new THREE.MeshStandardMaterial({ map: createJeansTexture(), roughness: 0.82 });
+            const bootMat = new THREE.MeshStandardMaterial({ color: 0x1c1e21, roughness: 0.5, metalness: 0.15 });
+            const hairMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.65 });
+            const buttonMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.25, metalness: 0.85 });
+
+            // Subtle Ground Contact Glow Ring so Aditya stands out naturally as the host
+            const ringGeom = new THREE.RingGeometry(0.62, 0.78, 32);
+            const ringMat = new THREE.MeshBasicMaterial({
+                color: 0xfbbf24,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.55
+            });
+            const groundRing = new THREE.Mesh(ringGeom, ringMat);
+            groundRing.rotation.x = -Math.PI / 2;
+            groundRing.position.y = 0.03;
+            root.add(groundRing);
+
+            // Hips / Pelvis Root
+            const hips = new THREE.Group();
+            hips.position.y = 1.02;
+            root.add(hips);
+
+            const pelvisMesh = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.2, 0.27), jeansMat);
+            pelvisMesh.castShadow = true;
+            hips.add(pelvisMesh);
+
+            // Belt button detail
+            const beltBtn = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.02, 10), buttonMat);
+            beltBtn.rotation.x = Math.PI / 2;
+            beltBtn.position.set(0, 0.04, 0.14);
+            hips.add(beltBtn);
+
+            // Upper Torso (Coral Tee + Open Dark Patterned Denim Jacket)
+            const torsoGroup = new THREE.Group();
+            torsoGroup.position.y = 0.1;
+            hips.add(torsoGroup);
+
+            // Inner Coral-Red Graphic Tee
+            const innerShirt = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.66, 0.24), shirtMat);
+            innerShirt.position.y = 0.34;
+            innerShirt.castShadow = true;
+            torsoGroup.add(innerShirt);
+            adityaInteractiveMeshes.push(innerShirt);
+
+            // Jacket Left & Right Front Panels + Back Panel (showing coral tee in the middle)
+            const backJacket = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.68, 0.14), jacketMat);
+            backJacket.position.set(0, 0.35, -0.07);
+            backJacket.castShadow = true;
+            torsoGroup.add(backJacket);
+
+            const leftJacketPanel = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.68, 0.28), jacketMat);
+            leftJacketPanel.position.set(0.16, 0.35, 0.01);
+            leftJacketPanel.castShadow = true;
+            torsoGroup.add(leftJacketPanel);
+            adityaInteractiveMeshes.push(leftJacketPanel);
+
+            const rightJacketPanel = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.68, 0.28), jacketMat);
+            rightJacketPanel.position.set(-0.16, 0.35, 0.01);
+            rightJacketPanel.castShadow = true;
+            torsoGroup.add(rightJacketPanel);
+            adityaInteractiveMeshes.push(rightJacketPanel);
+
+            // Shoulder Yoke
+            const shoulderYoke = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.12, 0.29), jacketMat);
+            shoulderYoke.position.set(0, 0.65, 0);
+            shoulderYoke.castShadow = true;
+            torsoGroup.add(shoulderYoke);
+
+            // Jacket Collar Flaps
+            const leftCollar = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.28), jacketMat);
+            leftCollar.position.set(0.12, 0.72, 0.02);
+            leftCollar.rotation.z = -0.35;
+            torsoGroup.add(leftCollar);
+
+            const rightCollar = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.28), jacketMat);
+            rightCollar.position.set(-0.12, 0.72, 0.02);
+            rightCollar.rotation.z = 0.35;
+            torsoGroup.add(rightCollar);
+
+            // Silver Buttons along the Jacket Placket & Chest Pockets
+            [0.08, 0.22, 0.36, 0.50, 0.62].forEach((by) => {
+                const btn = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 8), buttonMat);
+                btn.position.set(-0.09, by, 0.155);
+                torsoGroup.add(btn);
+            });
+
+            // Chest Pocket Flaps + Buttons
+            [-0.16, 0.16].forEach((px) => {
+                const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.13, 0.02), jacketMat);
+                pocket.position.set(px, 0.45, 0.15);
+                torsoGroup.add(pocket);
+
+                const pBtn = new THREE.Mesh(new THREE.SphereGeometry(0.015, 8, 8), buttonMat);
+                pBtn.position.set(px, 0.47, 0.165);
+                torsoGroup.add(pBtn);
+            });
+
+            // Neck & Sculpted Head Group
+            const neckGroup = new THREE.Group();
+            neckGroup.position.set(0, 0.72, 0);
+            torsoGroup.add(neckGroup);
+
+            const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.085, 0.14, 14), skinMat);
+            neckMesh.position.y = 0.05;
+            neckGroup.add(neckMesh);
+
+            const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.195, 24, 24), skinMat);
+            headMesh.scale.set(0.92, 1.08, 0.95);
+            headMesh.position.y = 0.24;
+            headMesh.castShadow = true;
+            neckGroup.add(headMesh);
+            adityaInteractiveMeshes.push(headMesh);
+
+            // Ears
+            [-0.175, 0.175].forEach((ex) => {
+                const ear = new THREE.Mesh(new THREE.SphereGeometry(0.038, 10, 10), skinMat);
+                ear.scale.set(0.5, 1.1, 0.7);
+                ear.position.set(ex, 0.23, 0);
+                neckGroup.add(ear);
+            });
+
+            // Styled Short Dark Hair (swept top + tapered sides matching reference)
+            const hairCrown = new THREE.Mesh(
+                new THREE.SphereGeometry(0.205, 20, 18, 0, Math.PI * 2, 0, Math.PI * 0.58),
+                hairMat
+            );
+            hairCrown.scale.set(0.94, 1.08, 0.98);
+            hairCrown.position.set(0, 0.26, -0.01);
+            hairCrown.rotation.x = -0.12;
+            neckGroup.add(hairCrown);
+
+            const hairQuiff = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.09, 0.16), hairMat);
+            hairQuiff.position.set(0.01, 0.42, 0.09);
+            hairQuiff.rotation.x = -0.22;
+            hairQuiff.rotation.z = -0.06;
+            neckGroup.add(hairQuiff);
+
+            // Expressive Eyebrows, Eyes, Nose, and Friendly Smile
+            const browMat = new THREE.MeshBasicMaterial({ color: 0x141417 });
+            const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const irisMat = new THREE.MeshBasicMaterial({ color: 0x2b1d14 });
+            const lipMat = new THREE.MeshStandardMaterial({ color: 0xc47568, roughness: 0.5 });
+
+            [-0.068, 0.068].forEach((sideX, i) => {
+                // Eyebrow
+                const brow = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.015, 0.02), browMat);
+                brow.position.set(sideX, 0.305, 0.172);
+                brow.rotation.z = i === 0 ? 0.06 : -0.06;
+                neckGroup.add(brow);
+
+                // Sclera
+                const sclera = new THREE.Mesh(new THREE.SphereGeometry(0.024, 12, 12), eyeWhiteMat);
+                sclera.scale.set(1.15, 0.85, 0.6);
+                sclera.position.set(sideX, 0.265, 0.172);
+                neckGroup.add(sclera);
+
+                // Pupil/Iris
+                const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.013, 10, 10), irisMat);
+                pupil.position.set(sideX, 0.265, 0.186);
+                neckGroup.add(pupil);
+            });
+
+            // Nose bridge
+            const nose = new THREE.Mesh(new THREE.ConeGeometry(0.024, 0.065, 10), skinMat);
+            nose.position.set(0, 0.23, 0.192);
+            nose.rotation.x = 0.22;
+            neckGroup.add(nose);
+
+            // Lips
+            const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.018, 0.02), lipMat);
+            mouth.position.set(0, 0.168, 0.176);
+            neckGroup.add(mouth);
+
+            // Multi-Jointed Arms (Shoulder -> Upper Arm -> Elbow -> Forearm + Hand)
+            function buildArticulatedArm(side) {
+                const shoulderPivot = new THREE.Group();
+                shoulderPivot.position.set(side * 0.31, 0.62, 0);
+
+                const shoulderCap = new THREE.Mesh(new THREE.SphereGeometry(0.082, 12, 12), jacketMat);
+                shoulderPivot.add(shoulderCap);
+
+                const upperArm = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.066, 0.34, 12), jacketMat);
+                upperArm.position.y = -0.17;
+                upperArm.castShadow = true;
+                shoulderPivot.add(upperArm);
+
+                const elbowPivot = new THREE.Group();
+                elbowPivot.position.set(0, -0.34, 0);
+                shoulderPivot.add(elbowPivot);
+
+                const elbowJoint = new THREE.Mesh(new THREE.SphereGeometry(0.064, 10, 10), jacketMat);
+                elbowPivot.add(elbowJoint);
+
+                const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.064, 0.054, 0.30, 12), jacketMat);
+                forearm.position.y = -0.15;
+                forearm.castShadow = true;
+                elbowPivot.add(forearm);
+
+                // Denim Cuff
+                const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.058, 0.05, 12), jacketMat);
+                cuff.position.y = -0.29;
+                elbowPivot.add(cuff);
+
+                // Hand + Thumb
+                const wristPivot = new THREE.Group();
+                wristPivot.position.set(0, -0.33, 0);
+                elbowPivot.add(wristPivot);
+
+                const palm = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.095, 0.035), skinMat);
+                palm.position.y = -0.03;
+                wristPivot.add(palm);
+
+                const thumb = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.01, 0.045, 8), skinMat);
+                thumb.position.set(side * -0.038, -0.02, 0.015);
+                thumb.rotation.z = side * 0.45;
+                wristPivot.add(thumb);
+
+                return { shoulderPivot, elbowPivot, wristPivot };
+            }
+
+            const leftArm = buildArticulatedArm(1);   // Viewer's right / character's left
+            const rightArm = buildArticulatedArm(-1); // Character's right (waving arm)
+            torsoGroup.add(leftArm.shoulderPivot, rightArm.shoulderPivot);
+
+            // Multi-Jointed Legs (Hip -> Thigh -> Knee -> Shin -> Black Lace Boots)
+            function buildArticulatedLeg(side) {
+                const hipPivot = new THREE.Group();
+                hipPivot.position.set(side * 0.135, -0.04, 0);
+
+                const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.098, 0.082, 0.46, 14), jeansMat);
+                thigh.position.y = -0.23;
+                thigh.castShadow = true;
+                hipPivot.add(thigh);
+
+                const kneePivot = new THREE.Group();
+                kneePivot.position.set(0, -0.46, 0);
+                hipPivot.add(kneePivot);
+
+                const kneeJoint = new THREE.Mesh(new THREE.SphereGeometry(0.078, 10, 10), jeansMat);
+                kneePivot.add(kneeJoint);
+
+                const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.44, 14), jeansMat);
+                shin.position.y = -0.22;
+                shin.castShadow = true;
+                kneePivot.add(shin);
+
+                // Chunky Black Combat/Street Boot matching reference image
+                const bootGroup = new THREE.Group();
+                bootGroup.position.set(0, -0.45, 0.035);
+                kneePivot.add(bootGroup);
+
+                const bootUpper = new THREE.Mesh(new THREE.BoxGeometry(0.135, 0.13, 0.24), bootMat);
+                bootUpper.position.set(0, 0.02, 0);
+                bootUpper.castShadow = true;
+                bootGroup.add(bootUpper);
+
+                const bootToe = new THREE.Mesh(new THREE.SphereGeometry(0.068, 12, 10), bootMat);
+                bootToe.scale.set(1.0, 0.75, 1.25);
+                bootToe.position.set(0, -0.005, 0.085);
+                bootGroup.add(bootToe);
+
+                const bootSole = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.145, 0.04, 0.27),
+                    new THREE.MeshStandardMaterial({ color: 0x0f1115, roughness: 0.9 })
+                );
+                bootSole.position.set(0, -0.045, 0.01);
+                bootGroup.add(bootSole);
+
+                return { hipPivot, kneePivot, bootGroup };
+            }
+
+            const leftLeg = buildArticulatedLeg(1);
+            const rightLeg = buildArticulatedLeg(-1);
+            hips.add(leftLeg.hipPivot, rightLeg.hipPivot);
+
+            // Scale so Aditya stands at realistic human proportions in the scene
+            root.scale.setScalar(1.38);
+            root.position.set(-46, 0.14, 8.2);
+            scene.add(root);
+
+            return {
+                root,
+                hips,
+                torsoGroup,
+                neckGroup,
+                leftArm,
+                rightArm,
+                leftLeg,
+                rightLeg,
+                groundRing,
+                currentPos: new THREE.Vector3(-46, 0.14, 8.2),
+                targetPos: new THREE.Vector3(-46, 0.14, 8.2),
+                currentRotY: 0,
+                manualWaveBoost: 0
+            };
+        }
+
+        const adityaGuide = createAdityaGuideCharacter();
+
+        function triggerAdityaWave() {
+            adityaGuide.manualWaveBoost = 2.6;
+            showToast("Aditya waves hi! 👋 Pick any of the 5 buildings to explore together!");
+        }
+
+        /********************************************************************
+         * 9. FLOATING 3D BUILDING MARKERS IN DOM
+         ********************************************************************/
+        const markersContainer = document.getElementById("markers-container");
+        const markerElements = [];
+
+        BUILDINGS_DATA.forEach((b, idx) => {
+            const btn = document.createElement("button");
+            btn.className = "building-pin glass-panel px-3 py-1.5 rounded-2xl shadow-xl border border-white/25 hover:border-amber-400 flex items-center gap-2 group transition";
+            btn.onclick = () => focusBuilding(idx);
+            btn.innerHTML = `
+                <span class="w-6 h-6 rounded-lg flex items-center justify-center text-xs font-extrabold text-slate-950" style="background:${b.trimColor}">
+                    ${b.number}
+                </span>
+                <div class="text-left pr-1">
+                    <div class="text-[10px] uppercase tracking-wider text-slate-300 leading-none">${b.storefrontTitle}</div>
+                    <div class="text-xs font-display font-bold text-white group-hover:text-amber-300 leading-tight">${b.name}</div>
+                </div>
+            `;
+            markersContainer.appendChild(btn);
+            markerElements.push({
+                el: btn,
+                worldPos: new THREE.Vector3(b.xPos, 21.8, -13.0)
+            });
+        });
+
+        /********************************************************************
+         * 10. SCROLL-DRIVEN CAMERA CHOREOGRAPHY + BUILDING FOCUS STATE
+         ********************************************************************/
+        let scrollProgress = 0;
+        let focusedBuildingIndex = null;
+
+        const currentCamPos = new THREE.Vector3(0, 64, 30);
+        const currentLookAt = new THREE.Vector3(0, 62, -30);
+        const targetCamPos = new THREE.Vector3(0, 64, 30);
+        const targetLookAt = new THREE.Vector3(0, 62, -30);
+
+        const KEYFRAMES = [
+            { p: 0.00, pos: new THREE.Vector3(0, 70, 60),   look: new THREE.Vector3(0, 60, -20) }, // High in sky
+            { p: 0.10, pos: new THREE.Vector3(-26, 30, 45), look: new THREE.Vector3(-36, 15, 0) }, // Mid descent, avoiding trees
+            { p: 0.20, pos: new THREE.Vector3(-52, 8.2, 28), look: new THREE.Vector3(-52, 8.2, -18) }, // Approaching Building 1
+            { p: 0.28, pos: new THREE.Vector3(-52, 6.2, 18), look: new THREE.Vector3(-52, 7.2, -19) }, // Building 1 (-52)
+            { p: 0.44, pos: new THREE.Vector3(-26, 6.2, 18), look: new THREE.Vector3(-26, 7.2, -19) }, // Building 2 (-26)
+            { p: 0.58, pos: new THREE.Vector3(0, 6.2, 18),   look: new THREE.Vector3(0, 7.2, -19) },   // Building 3 (0)
+            { p: 0.72, pos: new THREE.Vector3(26, 6.2, 18),  look: new THREE.Vector3(26, 7.2, -19) },  // Building 4 (26)
+            { p: 0.86, pos: new THREE.Vector3(52, 6.2, 18),  look: new THREE.Vector3(52, 7.2, -19) },  // Building 5 (52)
+            { p: 1.00, pos: new THREE.Vector3(4, 5.5, 36),   look: new THREE.Vector3(-6, 3.5, 12) }    // Hub - Pulled back to show character full-body
+        ];
+
+        function computeScrollCamera(p) {
+            const clamped = Math.max(0, Math.min(1, p));
+            for (let i = 0; i < KEYFRAMES.length - 1; i++) {
+                const k1 = KEYFRAMES[i];
+                const k2 = KEYFRAMES[i + 1];
+                if (clamped >= k1.p && clamped <= k2.p) {
+                    const localT = (clamped - k1.p) / (k2.p - k1.p);
+                    const smoothT = localT * localT * (3 - 2 * localT);
+                    targetCamPos.lerpVectors(k1.pos, k2.pos, smoothT);
+                    targetLookAt.lerpVectors(k1.look, k2.look, smoothT);
+                    return;
+                }
+            }
+        }
+
+        window.addEventListener("scroll", () => {
+            const maxScroll = document.getElementById("scroll-track").offsetHeight - window.innerHeight;
+            scrollProgress = maxScroll > 0 ? window.scrollY / maxScroll : 0;
+
+            if (focusedBuildingIndex !== null && Math.abs(scrollProgress - lastFocusScrollProgress) > 0.04) {
+                closeBuildingModal(false);
+            }
+        }, { passive: true });
+
+        let lastFocusScrollProgress = 0;
+
+        const skyHeroEl = document.getElementById("sky-hero");
+        const tourBannerEl = document.getElementById("tour-banner");
+        const destHubEl = document.getElementById("destination-hub");
+        const adityaBubbleEl = document.getElementById("aditya-bubble");
+        const adityaBubbleTextEl = document.getElementById("aditya-bubble-text");
+        const adityaHeadWorldPos = new THREE.Vector3();
+
+        function updateUIOverlays() {
+            // Priority Flags to ensure no overlapping overlays
+            const isDrawerActive = focusedBuildingIndex !== null;
+            const isTourBannerActive = !isDrawerActive && scrollProgress >= 0.22 && scrollProgress <= 0.90;
+            const isHubActive = !isDrawerActive && scrollProgress > 0.91;
+            const isSkyIntroActive = !isDrawerActive && scrollProgress < 0.11;
+
+            // 1. Sky Hero Overlay
+            if (isSkyIntroActive) {
+                skyHeroEl.style.opacity = String(1 - scrollProgress / 0.11);
+                skyHeroEl.style.pointerEvents = "auto";
+            } else {
+                skyHeroEl.style.opacity = "0";
+                skyHeroEl.style.pointerEvents = "none";
+            }
+
+            // Hide "Interactive 3D City Experience" badge as soon as scroll starts
+            const introBadge = document.getElementById("intro-badge");
+            if (introBadge) {
+                introBadge.style.opacity = scrollProgress > 0.02 ? "0" : "1";
+            }
+
+            // 2. Street Tour Banner
+            if (isTourBannerActive) {
+                tourBannerEl.style.opacity = "1";
+                tourBannerEl.style.transform = "translate(-50%, 0)";
+
+                const normalized = (scrollProgress - 0.22) / (0.90 - 0.22);
+                const idx = Math.min(4, Math.max(0, Math.floor(normalized * 5)));
+                const b = BUILDINGS_DATA[idx];
+
+                document.getElementById("tour-badge").textContent = b.number;
+                document.getElementById("tour-subtitle").textContent = `Aditya's Guided Tour • Place ${idx + 1} of 5`;
+                document.getElementById("tour-title").textContent = `${b.number} Brownstone Ave — ${b.name}`;
+                document.getElementById("tour-enter-btn").onclick = () => focusBuilding(idx);
+            } else {
+                tourBannerEl.style.opacity = "0";
+                tourBannerEl.style.transform = "translate(-50%, 16px)";
+            }
+
+            // 3. Destination Hub
+            if (isHubActive) {
+                destHubEl.style.opacity = "1";
+                destHubEl.style.transform = "translateX(0)";
+            } else {
+                destHubEl.style.opacity = "0";
+                destHubEl.style.transform = "translateX(32px)";
+            }
+
+            // 4. Aditya Speech Bubble (Hidden when Drawer or Tour Banner is active, ONLY visible at Hub)
+            const showAdityaBubble = !isDrawerActive && isHubActive;
+            
+            if (!showAdityaBubble) {
+                adityaBubbleEl.style.opacity = "0";
+                adityaBubbleEl.style.pointerEvents = "none";
+            } else {
+                if (isHubActive) {
+                    adityaBubbleTextEl.textContent = "Hi! I'm Aditya! 👋 Where would you like to go?";
+                }
+
+                adityaHeadWorldPos.copy(adityaGuide.root.position);
+                adityaHeadWorldPos.y += 2.95;
+                const projected = adityaHeadWorldPos.project(camera);
+
+                if (projected.z > 1) {
+                    adityaBubbleEl.style.opacity = "0";
+                    adityaBubbleEl.style.pointerEvents = "none";
+                } else {
+                    const bx = (projected.x * 0.5 + 0.5) * window.innerWidth;
+                    const by = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+                    const clampedX = Math.max(150, Math.min(window.innerWidth - 150, bx));
+                    const clampedY = Math.max(85, Math.min(window.innerHeight - 180, by));
+                    adityaBubbleEl.style.left = `${clampedX}px`;
+                    adityaBubbleEl.style.top = `${clampedY}px`;
+                    adityaBubbleEl.style.opacity = "1";
+                    adityaBubbleEl.style.pointerEvents = "auto";
+                }
+            }
+
+            // 5. Building Pins (Hidden when Side Drawer is active)
+            const showPins = !isDrawerActive && scrollProgress > 0.14;
+            markerElements.forEach((m) => {
+                if (!showPins) {
+                    m.el.style.opacity = "0";
+                    m.el.style.pointerEvents = "none";
+                    return;
+                }
+                const projected = m.worldPos.clone().project(camera);
+                if (projected.z > 1) {
+                    m.el.style.opacity = "0";
+                    m.el.style.pointerEvents = "none";
+                } else {
+                    const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
+                    const y = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+                    m.el.style.left = `${x}px`;
+                    m.el.style.top = `${y}px`;
+                    m.el.style.opacity = "1";
+                    m.el.style.pointerEvents = "auto";
+                }
+            });
+        }
+
+        /********************************************************************
+         * 11. INTERACTIVE NAVIGATION & BUILDING MODAL FUNCTIONS
+         ********************************************************************/
+        function focusBuilding(index) {
+            focusedBuildingIndex = index;
+            lastFocusScrollProgress = scrollProgress;
+            const b = BUILDINGS_DATA[index];
+
+            for (let i = 0; i < 5; i++) {
+                const navBtn = document.getElementById(`nav-${i}`);
+                if (navBtn) {
+                    if (i === index) {
+                        navBtn.classList.add("bg-white/10", "text-amber-300");
+                        navBtn.querySelector('span').classList.replace('bg-slate-500', 'bg-amber-400');
+                    } else {
+                        navBtn.classList.remove("bg-white/10", "text-amber-300");
+                        navBtn.querySelector('span').classList.replace('bg-amber-400', 'bg-slate-500');
+                    }
+                }
+            }
+
+            // Using neutral styling rather than trimColor for consistency
+            document.getElementById("modal-badge").textContent = b.number;
+            document.getElementById("modal-subtitle").textContent = b.subtitle;
+            document.getElementById("modal-title").textContent = `${b.name} — Aditya Gupta`;
+            document.getElementById("modal-body").innerHTML = b.htmlContent;
+
+            const drawer = document.getElementById("building-modal");
+            drawer.classList.remove("modal-closed");
+            drawer.classList.add("modal-open");
+            drawer.focus(); // Shift keyboard focus for accessibility
+
+            const isMobile = window.innerWidth < 640;
+            targetCamPos.set(b.xPos + (isMobile ? 0 : 5.5), 4.8, 7.2);
+            targetLookAt.set(b.xPos + (isMobile ? 0 : 4.2), 4.6, -15);
+        }
+
+        function closeBuildingModal(scrollToOverview = true) {
+            focusedBuildingIndex = null;
+            const drawer = document.getElementById("building-modal");
+            drawer.classList.add("modal-closed");
+            drawer.classList.remove("modal-open");
+
+            for (let i = 0; i < 5; i++) {
+                const navBtn = document.getElementById(`nav-${i}`);
+                if (navBtn) {
+                    navBtn.classList.remove("bg-white/10", "text-amber-300");
+                    navBtn.querySelector('span').classList.replace('bg-amber-400', 'bg-slate-500');
+                }
+            }
+
+            if (scrollToOverview) {
+                goToHub();
+            }
+        }
+
+        function stepBuilding(delta) {
+            if (focusedBuildingIndex === null) {
+                focusBuilding(0);
+                return;
+            }
+            const nextIdx = (focusedBuildingIndex + delta + BUILDINGS_DATA.length) % BUILDINGS_DATA.length;
+            focusBuilding(nextIdx);
+        }
+
+        function startStreetTour() {
+            const maxScroll = document.getElementById("scroll-track").offsetHeight - window.innerHeight;
+            window.scrollTo({ top: maxScroll * 0.30, behavior: "smooth" });
+        }
+
+        function goToHub() {
+            focusedBuildingIndex = null;
+            const drawer = document.getElementById("building-modal");
+            drawer.classList.add("modal-closed");
+            drawer.classList.remove("modal-open");
+            const maxScroll = document.getElementById("scroll-track").offsetHeight - window.innerHeight;
+            window.scrollTo({ top: maxScroll, behavior: "smooth" });
+        }
+
+        function scrollToTopSky() {
+            focusedBuildingIndex = null;
+            const drawer = document.getElementById("building-modal");
+            drawer.classList.add("modal-closed");
+            drawer.classList.remove("modal-open");
+            window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+
+        /********************************************************************
+         * 12. RAYCASTER: CLICK DIRECTLY ON ANY 3D BUILDING IN THE SCENE
+         ********************************************************************/
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let pointerDownPos = { x: 0, y: 0 };
+        let hoveredBuildingId = null;
+
+        renderer.domElement.addEventListener("pointerdown", (e) => {
+            pointerDownPos = { x: e.clientX, y: e.clientY };
+        });
+
+        renderer.domElement.addEventListener("pointerup", (e) => {
+            const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
+            if (dist > 6 || scrollProgress < 0.12) return;
+
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+
+            // Check if user clicked on Aditya's 3D Avatar
+            const guideHits = raycaster.intersectObjects(adityaInteractiveMeshes, false);
+            if (guideHits.length > 0) {
+                triggerAdityaWave();
+                return;
+            }
+
+            const hits = raycaster.intersectObjects(interactiveBuildingMeshes, false);
+            if (hits.length > 0) {
+                const bId = hits[0].object.userData.buildingId;
+                if (bId !== undefined) {
+                    focusBuilding(bId);
+                }
+            }
+        });
+
+        // Hover Detection & Parallax
+        const hoverLabelEl = document.getElementById("hover-label");
+        let mouseParallaxX = 0;
+        let mouseParallaxY = 0;
+        
+        window.addEventListener("mousemove", (e) => {
+            mouseParallaxX = (e.clientX / window.innerWidth - 0.5) * 1.4;
+            mouseParallaxY = (e.clientY / window.innerHeight - 0.5) * 0.8;
+
+            if (scrollProgress >= 0.12 && focusedBuildingIndex === null) {
+                mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+                raycaster.setFromCamera(mouse, camera);
+
+                const hits = raycaster.intersectObjects(interactiveBuildingMeshes, false);
+                if (hits.length > 0) {
+                    hoveredBuildingId = hits[0].object.userData.buildingId;
+                    document.body.style.cursor = "pointer";
+                    
+                    const bData = BUILDINGS_DATA.find(x => x.id === hoveredBuildingId);
+                    if (bData) {
+                        hoverLabelEl.textContent = `Enter ${bData.name}`;
+                        hoverLabelEl.style.opacity = "1";
+                        hoverLabelEl.style.left = `${e.clientX + 16}px`;
+                        hoverLabelEl.style.top = `${e.clientY + 16}px`;
+                    }
+                } else {
+                    const guideHits = raycaster.intersectObjects(adityaInteractiveMeshes, false);
+                    if (guideHits.length > 0) {
+                        hoveredBuildingId = null;
+                        document.body.style.cursor = "pointer";
+                        hoverLabelEl.textContent = "Say Hi!";
+                        hoverLabelEl.style.opacity = "1";
+                        hoverLabelEl.style.left = `${e.clientX + 16}px`;
+                        hoverLabelEl.style.top = `${e.clientY + 16}px`;
+                    } else {
+                        hoveredBuildingId = null;
+                        document.body.style.cursor = "default";
+                        hoverLabelEl.style.opacity = "0";
+                    }
+                }
+            } else {
+                hoveredBuildingId = null;
+                hoverLabelEl.style.opacity = "0";
+            }
+        });
+
+        /********************************************************************
+         * 13. DAYLIGHT / GOLDEN EVENING ATMOSPHERE TOGGLE & UTILITIES
+         ********************************************************************/
+        const themeParams = {
+            day: { bg: 0xdbe3ea, hemi: 0xf3f8ff, ambient: 0xfff5e6, sun: 0xfff1d6, sunInt: 1.35, windowGlow: 0.0, fog: 0xdbe3ea },
+            night: { bg: 0x231d33, hemi: 0x3a334f, ambient: 0xff9e6d, sun: 0xff8345, sunInt: 1.05, windowGlow: 1.0, fog: 0x231d33 }
+        };
+        let currentTheme = themeParams.day;
+        let targetTheme = themeParams.day;
+        
+        let isGoldenHour = false;
+
+        function toggleTimeOfDay() {
+            isGoldenHour = !isGoldenHour;
+            const icon = document.getElementById("time-icon");
+            const label = document.getElementById("time-label");
+
+            if (isGoldenHour) {
+                targetTheme = themeParams.night;
+                icon.className = "fa-solid fa-moon text-amber-300";
+                label.textContent = "Golden Evening";
+                showToast("Switched to Warm Evening Brownstone Glow ✨");
+            } else {
+                targetTheme = themeParams.day;
+                icon.className = "fa-solid fa-sun text-amber-400";
+                label.textContent = "Daylight";
+                showToast("Switched to Classic Daylight Street View ☀️");
+            }
+        }
+
+        let toastTimer = null;
+        function showToast(message) {
+            const toast = document.getElementById("toast");
+            document.getElementById("toast-text").textContent = message;
+            toast.classList.remove("opacity-0", "-translate-y-3");
+            toast.classList.add("opacity-100", "translate-y-0");
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                toast.classList.add("opacity-0", "-translate-y-3");
+                toast.classList.remove("opacity-100", "translate-y-0");
+            }, 2500);
+        }
+
+        function submitContactForm(e) {
+            e.preventDefault();
+            e.target.reset();
+            showToast("Message delivered to Aditya Gupta! Expect a reply soon 🚀");
+        }
+
+        function downloadResume() {
+            const resumeText = [
+                "ADITYA GUPTA — FULL-STACK DEVELOPER & CREATIVE ENGINEER",
+                "=======================================================",
+                "Location: Brownstone Avenue Portfolio • aditya.gupta.dev@portfolio.io",
+                "",
+                "EXPERIENCE:",
+                "• Senior Frontend & Creative Engineer @ NovaStack Digital Labs (2024 - Present)",
+                "• Full-Stack Software Developer @ Vertex Cloud Systems (2022 - 2024)",
+                "",
+                "CORE SKILLS:",
+                "React, Next.js, TypeScript, Three.js, WebGL, Tailwind CSS, Node.js, Python, PostgreSQL, Docker, AWS",
+                "",
+                "EDUCATION:",
+                "B.Tech in Computer Science & Engineering"
+            ].join("\n");
+
+            const blob = new Blob([resumeText], { type: "text/plain;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "Aditya_Gupta_Resume.txt";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast("Downloaded Aditya_Gupta_Resume.txt 📄");
+        }
+
+        /********************************************************************
+         * 14. MAIN ANIMATION LOOP (CLOUDS, CARS, WALKING PEDESTRIANS, TREES, CAMERA)
+         ********************************************************************/
+        const clock = new THREE.Clock();
+        
+        // Cinematic Intro Variables
+        let introCameraPanY = 80;
+        let introCameraPanZ = 40;
+
+        // Performance Auto-Scaling Variables
+        let lastPerfTime = performance.now();
+        let frameCount = 0;
+        let isDowngraded = false;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const elapsed = clock.getElapsedTime();
+
+            // FPS Monitor & Auto-Scaling
+            const now = performance.now();
+            frameCount++;
+            if (now - lastPerfTime >= 1000) {
+                const fps = frameCount * 1000 / (now - lastPerfTime);
+                frameCount = 0;
+                lastPerfTime = now;
+                if (fps < 40 && !isDowngraded && scrollProgress > 0.1) {
+                    isDowngraded = true;
+                    renderer.setPixelRatio(1);
+                    renderer.shadowMap.enabled = false;
+                    scene.traverse(c => { if(c.isMesh) { c.castShadow = false; c.receiveShadow = false; }});
+                    console.warn("Performance mode active: Shadows disabled due to FPS drop.");
+                    showToast("Performance mode activated for smoother scrolling.");
+                }
+            }
+
+            // Smooth Theme Interpolation
+            scene.background.lerp(new THREE.Color(targetTheme.bg), 0.015);
+            scene.fog.color.lerp(new THREE.Color(targetTheme.fog), 0.015);
+            hemiLight.color.lerp(new THREE.Color(targetTheme.hemi), 0.015);
+            ambientLight.color.lerp(new THREE.Color(targetTheme.ambient), 0.015);
+            sunLight.color.lerp(new THREE.Color(targetTheme.sun), 0.015);
+            sunLight.intensity += (targetTheme.sunInt - sunLight.intensity) * 0.015;
+            upperWindowMat.emissiveIntensity += (targetTheme.windowGlow - upperWindowMat.emissiveIntensity) * 0.015;
+            storeWindowMat.emissiveIntensity += (targetTheme.windowGlow - storeWindowMat.emissiveIntensity) * 0.015;
+
+            // Hover Building Physical Lift & Spotlight Effect
+            let targetSpotlightInt = 0;
+            Object.keys(buildingGroups).forEach(id => {
+                const group = buildingGroups[id];
+                const isHovered = (id == hoveredBuildingId);
+                
+                // Lift effect
+                const targetY = isHovered ? 0.65 : 0;
+                group.position.y += (targetY - group.position.y) * 0.12;
+                
+                // Scale effect
+                const targetScale = isHovered ? 1.015 : 1.0;
+                group.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.12);
+
+                // Move Spotlight
+                if (isHovered) {
+                    const b = BUILDINGS_DATA.find(x => x.id == id);
+                    hoverSpotlight.target.position.set(b.xPos, 0, -19.2);
+                    hoverSpotlight.position.set(b.xPos, 25, 5);
+                    targetSpotlightInt = 1.2;
+                }
+            });
+            hoverSpotlight.intensity += (targetSpotlightInt - hoverSpotlight.intensity) * 0.1;
+
+            if (focusedBuildingIndex === null) {
+                computeScrollCamera(scrollProgress);
+            }
+
+            // Cinematic Intro Camera Smooth Decay
+            introCameraPanY *= 0.985;
+            introCameraPanZ *= 0.985;
+
+            const desiredPos = targetCamPos.clone();
+            desiredPos.x += mouseParallaxX;
+            desiredPos.y += -mouseParallaxY * 0.45 + introCameraPanY;
+            desiredPos.z += introCameraPanZ;
+
+            // Use a softer lerp factor for smooth easing between buildings (no sudden cuts)
+            currentCamPos.lerp(desiredPos, 0.035);
+            currentLookAt.lerp(targetLookAt, 0.04);
+
+            camera.position.copy(currentCamPos);
+            camera.lookAt(currentLookAt);
+
+            clouds.forEach((c) => {
+                c.mesh.position.x += c.speed;
+                if (c.mesh.position.x > 125) c.mesh.position.x = -125;
+            });
+
+            haloMesh.scale.setScalar(1 + Math.sin(elapsed * 2) * 0.05);
+
+            cars.forEach((car) => {
+                car.mesh.position.x += car.speed * car.dir;
+                car.wheels.forEach((w) => {
+                    w.rotation.z -= car.speed * car.dir * 0.8;
+                });
+                if (car.dir > 0 && car.mesh.position.x > 135) car.mesh.position.x = -135;
+                if (car.dir < 0 && car.mesh.position.x < -135) car.mesh.position.x = 135;
+            });
+
+            pedestrians.forEach((p) => {
+                const walkCycle = elapsed * (p.speed * 195) + p.phase;
+
+                const swingAngle = Math.sin(walkCycle) * 0.58;
+                p.leftLeg.rotation.x = swingAngle;
+                p.rightLeg.rotation.x = -swingAngle;
+                p.leftArm.rotation.x = -swingAngle * 0.75;
+                p.rightArm.rotation.x = swingAngle * 0.75;
+
+                p.mesh.position.y = 0.16 + Math.abs(Math.cos(walkCycle)) * 0.045;
+                p.headGroup.rotation.y = Math.sin(elapsed * 0.9 + p.phase) * 0.22;
+
+                if (p.mode === "sidewalk") {
+                    p.mesh.position.x += p.speed * p.dir;
+                    p.mesh.rotation.y = p.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+                    if (p.dir > 0 && p.mesh.position.x > p.maxBound) p.mesh.position.x = p.minBound;
+                    if (p.dir < 0 && p.mesh.position.x < p.minBound) p.mesh.position.x = p.maxBound;
+                } else {
+                    p.mesh.position.z += p.speed * p.dir;
+                    p.mesh.rotation.y = p.dir > 0 ? 0 : Math.PI;
+                    if (p.dir > 0 && p.mesh.position.z > p.maxBound) p.dir = -1;
+                    if (p.dir < 0 && p.mesh.position.z < p.minBound) p.dir = 1;
+                }
+            });
+
+            trees.forEach((t) => {
+                t.group.rotation.z = Math.sin(elapsed * 1.4 + t.phase) * 0.025;
+            });
+
+            // -----------------------------------------------------------------
+            // 15. ANIMATE ADITYA GUPTA'S 3D GUIDE AVATAR (SMOOTH WALK, ESCORT & WAVE)
+            // -----------------------------------------------------------------
+            let isHubSpot = false;
+            if (focusedBuildingIndex !== null) {
+                // Aditya walks right up to the chosen building's storefront entrance to host the visitor
+                const b = BUILDINGS_DATA[focusedBuildingIndex];
+                adityaGuide.targetPos.set(b.xPos - 2.3, 0.16, -7.8);
+            } else if (scrollProgress > 0.88) {
+                // Final Hub: Aditya stands prominently on the LEFT side, pushed back slightly to be fully visible
+                isHubSpot = true;
+                adityaGuide.targetPos.set(-7, 0.16, 22.5);
+            } else if (scrollProgress < 0.16) {
+                // Ready at the start of the avenue as the camera descends from the sky
+                adityaGuide.targetPos.set(-48, 0.14, 7.8);
+            } else {
+                // Smoothly walks along the avenue guiding the user past all 5 buildings
+                const tourT = (scrollProgress - 0.16) / (0.88 - 0.16);
+                const guideX = -52 + tourT * 104;
+                adityaGuide.targetPos.set(guideX, 0.14, 7.8);
+            }
+
+            // Compute horizontal movement velocity for realistic stride & knee/elbow articulation
+            const dx = adityaGuide.targetPos.x - adityaGuide.currentPos.x;
+            const dz = adityaGuide.targetPos.z - adityaGuide.currentPos.z;
+            const distToTarget = Math.hypot(dx, dz);
+
+            // Smooth position interpolation (no sudden snapping)
+            const moveLerp = focusedBuildingIndex !== null ? 0.065 : 0.085;
+            adityaGuide.currentPos.lerp(adityaGuide.targetPos, moveLerp);
+            adityaGuide.root.position.copy(adityaGuide.currentPos);
+
+            // Pulse ground ring
+            adityaGuide.groundRing.scale.setScalar(1 + Math.sin(elapsed * 3.2) * 0.08);
+
+            // Determine walk factor (0 = standing idle/waving, 1 = full stride)
+            const walkBlend = Math.min(1, distToTarget * 0.65);
+
+            // Smoothly rotate Aditya: face movement direction while walking, or face the camera when standing
+            let desiredYaw = 0;
+            if (walkBlend > 0.18) {
+                desiredYaw = Math.atan2(dx, dz);
+            } else {
+                const camDx = camera.position.x - adityaGuide.currentPos.x;
+                const camDz = camera.position.z - adityaGuide.currentPos.z;
+                desiredYaw = Math.atan2(camDx, camDz);
+            }
+
+            // Shortest-angle smooth rotation
+            let angleDiff = desiredYaw - adityaGuide.currentRotY;
+            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+            adityaGuide.currentRotY += angleDiff * 0.12;
+            adityaGuide.root.rotation.y = adityaGuide.currentRotY;
+
+            // Multi-jointed Walking Gait + Breathing + Friendly Wave Animation
+            const gaitPhase = elapsed * 8.5;
+            const legSwing = Math.sin(gaitPhase) * 0.55 * walkBlend;
+            const oppLegSwing = Math.sin(gaitPhase + Math.PI) * 0.55 * walkBlend;
+
+            // Hip swing & natural knee bend (knees only bend backward during stride)
+            adityaGuide.leftLeg.hipPivot.rotation.x = legSwing;
+            adityaGuide.rightLeg.hipPivot.rotation.x = oppLegSwing;
+            adityaGuide.leftLeg.kneePivot.rotation.x = Math.max(0, -Math.cos(gaitPhase) * 0.52 * walkBlend);
+            adityaGuide.rightLeg.kneePivot.rotation.x = Math.max(0, -Math.cos(gaitPhase + Math.PI) * 0.52 * walkBlend);
+
+            // Vertical hip bob while walking + subtle breathing when standing
+            adityaGuide.hips.position.y = 1.02 + Math.abs(Math.sin(gaitPhase)) * 0.045 * walkBlend + Math.sin(elapsed * 2.2) * 0.008;
+            adityaGuide.torsoGroup.rotation.y = Math.sin(gaitPhase) * 0.08 * walkBlend;
+
+            // Left Arm: natural counter-swing while walking, relaxed by side when idle
+            adityaGuide.leftArm.shoulderPivot.rotation.x = oppLegSwing * 0.75;
+            adityaGuide.leftArm.shoulderPivot.rotation.z = 0.09;
+            adityaGuide.leftArm.elbowPivot.rotation.x = -0.18 - Math.max(0, oppLegSwing) * 0.35;
+
+            // Decay manual wave boost
+            if (adityaGuide.manualWaveBoost > 0) {
+                adityaGuide.manualWaveBoost = Math.max(0, adityaGuide.manualWaveBoost - 0.025);
+            }
+
+            // Right Arm: waves "Hi!" enthusiastically at the Hub, when welcoming at a building, or when clicked
+            const shouldWave = isHubSpot || focusedBuildingIndex !== null || adityaGuide.manualWaveBoost > 0 || scrollProgress < 0.18;
+            if (shouldWave && walkBlend < 0.35) {
+                const waveOsc = Math.sin(elapsed * 6.8) * 0.32;
+                adityaGuide.rightArm.shoulderPivot.rotation.x = THREE.MathUtils.lerp(
+                    adityaGuide.rightArm.shoulderPivot.rotation.x,
+                    -0.55,
+                    0.12
+                );
+                adityaGuide.rightArm.shoulderPivot.rotation.z = THREE.MathUtils.lerp(
+                    adityaGuide.rightArm.shoulderPivot.rotation.z,
+                    -2.15 + waveOsc,
+                    0.15
+                );
+                adityaGuide.rightArm.elbowPivot.rotation.x = THREE.MathUtils.lerp(
+                    adityaGuide.rightArm.elbowPivot.rotation.x,
+                    -0.95,
+                    0.14
+                );
+                adityaGuide.rightArm.wristPivot.rotation.z = Math.sin(elapsed * 13.5) * 0.25;
+            } else {
+                // Smoothly return right arm to natural walking swing
+                adityaGuide.rightArm.shoulderPivot.rotation.x = THREE.MathUtils.lerp(
+                    adityaGuide.rightArm.shoulderPivot.rotation.x,
+                    legSwing * 0.75,
+                    0.12
+                );
+                adityaGuide.rightArm.shoulderPivot.rotation.z = THREE.MathUtils.lerp(
+                    adityaGuide.rightArm.shoulderPivot.rotation.z,
+                    -0.09,
+                    0.12
+                );
+                adityaGuide.rightArm.elbowPivot.rotation.x = THREE.MathUtils.lerp(
+                    adityaGuide.rightArm.elbowPivot.rotation.x,
+                    -0.18 - Math.max(0, legSwing) * 0.35,
+                    0.12
+                );
+                adityaGuide.rightArm.wristPivot.rotation.z = 0;
+            }
+
+            // Subtle natural head look & friendly nod
+            adityaGuide.neckGroup.rotation.y = Math.sin(elapsed * 1.3) * 0.12 * (1 - walkBlend);
+            adityaGuide.neckGroup.rotation.x = Math.sin(elapsed * 2.4) * 0.04;
+
+            updateUIOverlays();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener("resize", () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Simulate asset generation/loading progress
+        let loadProgress = 0;
+        const loadInterval = setInterval(() => {
+            loadProgress += Math.random() * 15;
+            if (loadProgress > 90) loadProgress = 90;
+            const bar = document.getElementById('loading-bar');
+            const text = document.getElementById('loading-text');
+            if (bar) bar.style.width = loadProgress + '%';
+            if (text) text.textContent = Math.floor(loadProgress) + '%';
+        }, 100);
+
+        // Wait briefly to ensure textures are uploaded to GPU before revealing
+        setTimeout(() => {
+            clearInterval(loadInterval);
+            const bar = document.getElementById('loading-bar');
+            const text = document.getElementById('loading-text');
+            if (bar) bar.style.width = '100%';
+            if (text) text.textContent = '100%';
+            
+            setTimeout(() => {
+                const loader = document.getElementById('loading-screen');
+                if (loader) {
+                    loader.style.opacity = '0';
+                    setTimeout(() => loader.remove(), 1000);
+                }
+                
+                // Start Cinematic Fade & Text Reveal
+                const introFade = document.getElementById('intro-fade');
+                const heroText = document.getElementById('hero-text-block');
+                if (introFade) introFade.style.opacity = '0';
+                if (heroText) heroText.classList.remove('opacity-0');
+
+            }, 600);
+
+            animate();
+        }, 500);
+
+        // --- Expose Navigation & UI functions to global scope ---
+        window.focusBuilding = focusBuilding;
+        window.closeBuildingModal = closeBuildingModal;
+        window.stepBuilding = stepBuilding;
+        window.startStreetTour = startStreetTour;
+        window.goToHub = goToHub;
+        window.scrollToTopSky = scrollToTopSky;
+        window.triggerAdityaWave = triggerAdityaWave;
+        window.toggleTimeOfDay = toggleTimeOfDay;
+
+        } // End of init3DScene()
+    </script>
+</body>
+</html>
