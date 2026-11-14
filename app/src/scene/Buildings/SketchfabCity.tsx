@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useRef } from 'react';
 import * as THREE from 'three';
 import { useGLTF, Html } from '@react-three/drei';
+import { useFrame } from '@react-three/fiber';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { CITY_CONFIG } from '../../config/cityConfig';
 import { BUILDING_PROXIES, BuildingProxyDef } from '../../data/buildings';
@@ -24,6 +25,140 @@ interface BuildingInstanceConfig {
   tintColor: string;
   proxy?: BuildingProxyDef;
 }
+
+const PROXY_VEC = new THREE.Vector3();
+const SCREEN_VEC = new THREE.Vector3();
+
+interface BuildingEntranceLabelProps {
+  proxy: BuildingProxyDef;
+  isHovered: boolean;
+  isFocused: boolean;
+  onFocus: () => void;
+  onHoverStart: () => void;
+  onHoverEnd: () => void;
+}
+
+const BuildingEntranceLabel: React.FC<BuildingEntranceLabelProps> = ({
+  proxy,
+  isHovered,
+  isFocused,
+  onFocus,
+  onHoverStart,
+  onHoverEnd,
+}) => {
+  const [isNearest, setIsNearest] = useState(false);
+  const [collidesTopBar, setCollidesTopBar] = useState(false);
+
+  useFrame(({ camera }) => {
+    // 1. Calculate distance from camera to building entrance
+    PROXY_VEC.set(proxy.xPos, 7.8, proxy.zPos + 3.5);
+    const distToCam = camera.position.distanceTo(PROXY_VEC);
+
+    // 2. Identify if this is the closest building to the camera
+    let minOtherDist = 9999;
+    BUILDING_PROXIES.forEach((p) => {
+      PROXY_VEC.set(p.xPos, 7.8, p.zPos + 3.5);
+      const d = camera.position.distanceTo(PROXY_VEC);
+      if (d < minOtherDist) {
+        minOtherDist = d;
+      }
+    });
+
+    const nearest = Math.abs(distToCam - minOtherDist) < 2.0 || distToCam < 26.0;
+    if (nearest !== isNearest) {
+      setIsNearest(nearest);
+    }
+
+    // 3. Project to screen space and check top tour bar overlap (top 90px)
+    SCREEN_VEC.set(proxy.xPos, 7.8, proxy.zPos + 3.5);
+    SCREEN_VEC.project(camera);
+    const screenY = (-(SCREEN_VEC.y * 0.5) + 0.5) * window.innerHeight;
+    const isBehind = SCREEN_VEC.z > 1.0;
+    const topBarCollision = isBehind || screenY < 90;
+    if (topBarCollision !== collidesTopBar) {
+      setCollidesTopBar(topBarCollision);
+    }
+  });
+
+  const showFullPill = isNearest || isHovered || isFocused;
+
+  if (collidesTopBar && !isHovered && !isFocused) {
+    return null;
+  }
+
+  return (
+    <Html
+      position={[0, 7.8, 3.2]}
+      center
+      distanceFactor={32}
+      style={{ pointerEvents: 'none', transition: 'all 0.25s ease' }}
+    >
+      <div
+        className="pointer-events-auto transition-all duration-300"
+        onMouseEnter={onHoverStart}
+        onMouseLeave={onHoverEnd}
+        onClick={(e) => {
+          e.stopPropagation();
+          onFocus();
+        }}
+      >
+        {showFullPill ? (
+          // Full High-Contrast Pill Label (Readable at 1080p, solid obsidian background)
+          <div
+            className={`flex items-center gap-3 px-4 py-2 rounded-full cursor-pointer transition-all duration-300 shadow-2xl ${
+              isHovered || isFocused ? 'scale-105 -translate-y-1' : 'scale-100'
+            }`}
+            style={{
+              backgroundColor: 'rgba(10, 15, 26, 0.96)',
+              border: `2px solid ${proxy.trimColor}`,
+              boxShadow: isHovered || isFocused
+                ? `0 12px 30px rgba(0,0,0,0.85), 0 0 20px ${proxy.trimColor}66`
+                : `0 8px 24px rgba(0,0,0,0.7), 0 0 10px ${proxy.trimColor}33`,
+            }}
+          >
+            {/* Building Number Badge */}
+            <span
+              className="flex items-center justify-center w-7 h-7 rounded-full font-mono text-xs font-black text-white shadow-inner"
+              style={{ backgroundColor: proxy.trimColor }}
+            >
+              {proxy.number}
+            </span>
+
+            {/* Storefront Title & Name */}
+            <div className="flex flex-col pr-1">
+              <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-slate-300">
+                {proxy.storefrontTitle}
+              </span>
+              <span className="text-sm font-bold text-white whitespace-nowrap">
+                {proxy.name}
+              </span>
+            </div>
+
+            {/* Arrow Indicator */}
+            <span className="text-sm font-black transition-transform" style={{ color: proxy.trimColor }}>
+              →
+            </span>
+          </div>
+        ) : (
+          // Compact Number Marker Badge (Prevents label collision across distant buildings)
+          <div
+            className="flex items-center justify-center w-8 h-8 rounded-full cursor-pointer shadow-lg transition-transform hover:scale-125"
+            style={{
+              backgroundColor: proxy.trimColor,
+              border: '2px solid rgba(255, 255, 255, 0.9)',
+              boxShadow: `0 4px 12px rgba(0,0,0,0.6), 0 0 10px ${proxy.trimColor}88`,
+            }}
+            title={`${proxy.number} ${proxy.name}`}
+          >
+            <span className="font-mono text-xs font-black text-white">
+              {proxy.number}
+            </span>
+          </div>
+        )}
+      </div>
+    </Html>
+  );
+};
 
 export const SketchfabCity: React.FC = () => {
   const gltf = useGLTF('/models/city.opt.glb', true, true, (loader) => {
@@ -311,59 +446,15 @@ export const SketchfabCity: React.FC = () => {
               </mesh>
             )}
 
-            {/* Floating Street Label above Facade Entrance */}
-            <Html
-              position={[0, 7.6, 2.5]}
-              center
-              distanceFactor={22}
-              style={{ pointerEvents: 'none', transition: 'all 0.3s ease' }}
-            >
-              <div
-                className={`transition-all duration-300 transform ${
-                  isHovered || isFocused
-                    ? 'scale-110 -translate-y-1 opacity-100'
-                    : 'scale-95 opacity-85 hover:opacity-100'
-                }`}
-              >
-                <div
-                  className="flex items-center gap-2.5 px-3 py-1.5 rounded-full backdrop-blur-md shadow-2xl border text-left cursor-pointer pointer-events-auto"
-                  style={{
-                    backgroundColor: isHovered || isFocused ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.8)',
-                    borderColor: isHovered || isFocused ? proxy.trimColor : 'rgba(255, 255, 255, 0.2)',
-                    boxShadow: isHovered || isFocused ? `0 0 20px ${proxy.trimColor}44` : 'none',
-                  }}
-                  onClick={() => focusBuilding(proxy.id)}
-                  onMouseEnter={() => setHoveredBuildingId(proxy.id)}
-                  onMouseLeave={() => setHoveredBuildingId(null)}
-                >
-                  {/* Building Number Badge */}
-                  <span
-                    className="flex items-center justify-center w-6 h-6 rounded-full font-mono text-xs font-bold text-white shadow-inner"
-                    style={{ backgroundColor: proxy.trimColor }}
-                  >
-                    {proxy.number}
-                  </span>
-
-                  {/* Building Title & Name */}
-                  <div className="flex flex-col pr-1">
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-300 font-mono">
-                      {proxy.storefrontTitle}
-                    </span>
-                    <span className="text-xs font-semibold text-white leading-tight">
-                      {proxy.name}
-                    </span>
-                  </div>
-
-                  {/* Click arrow */}
-                  <span
-                    className="text-xs font-bold transition-transform"
-                    style={{ color: proxy.trimColor }}
-                  >
-                    →
-                  </span>
-                </div>
-              </div>
-            </Html>
+            {/* Floating Street Label above Facade Entrance (High-Contrast, 1080p, Overlap Culling) */}
+            <BuildingEntranceLabel
+              proxy={proxy}
+              isHovered={isHovered}
+              isFocused={isFocused}
+              onFocus={() => focusBuilding(proxy.id)}
+              onHoverStart={() => setHoveredBuildingId(proxy.id)}
+              onHoverEnd={() => setHoveredBuildingId(null)}
+            />
           </group>
         );
       })}
