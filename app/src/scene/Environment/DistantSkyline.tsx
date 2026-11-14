@@ -43,13 +43,20 @@ export const DistantSkyline: React.FC = () => {
       });
     }
 
-    // 3. West / East distant horizon blocks
-    [-180, -150, 150, 180].forEach((x, idx) => {
+    // 3. West / East distant horizon avenue vistas (framing both ends of the street)
+    const endPositions: Array<[number, number]> = [
+      [-220, -15], [-200, 10], [-175, -5], [-155, 18], [-140, -18],
+      [140, -18], [155, 18], [175, -5], [200, 10], [220, -15]
+    ];
+    endPositions.forEach(([x, z], idx) => {
+      const h = 38 + ((Math.abs(x * 11) % 32));
+      const w = 18 + ((Math.abs(x * 3) % 12));
+      const d = 18 + ((Math.abs(x * 5) % 12));
       list.push({
-        pos: [x, 40 / 2, -10],
-        size: [24, 40, 30],
+        pos: [x, h / 2, z],
+        size: [w, h, d],
         color: colors[idx % colors.length],
-        hasSpire: true,
+        hasSpire: h > 48,
       });
     });
 

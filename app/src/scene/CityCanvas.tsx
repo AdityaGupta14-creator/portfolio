@@ -20,7 +20,7 @@ export const CityCanvas: React.FC = () => {
           antialias: true,
           powerPreference: 'high-performance',
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.0,
+          toneMappingExposure: 1.22,
         }}
         onCreated={({ gl }) => {
           gl.shadowMap.enabled = shadowsEnabled;

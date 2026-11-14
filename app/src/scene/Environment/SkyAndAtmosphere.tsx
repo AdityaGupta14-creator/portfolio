@@ -162,8 +162,12 @@ export const SkyAndAtmosphere: React.FC = () => {
     skyUniforms.current.uHorizon.value.lerp(target.skyHorizon, rate);
     skyUniforms.current.uZenith.value.lerp(target.skyZenith, rate);
 
-    // Disable scene.background so the sky dome is visible
-    scene.background = null;
+    // Keep scene.background aligned with fog color so background is never pitch black
+    if (!scene.background || !(scene.background instanceof THREE.Color)) {
+      scene.background = target.fog.clone();
+    } else {
+      scene.background.lerp(target.fog, rate);
+    }
 
     // Smooth lerp fog to match horizon
     if (scene.fog) {
@@ -214,23 +218,23 @@ export const SkyAndAtmosphere: React.FC = () => {
 
   return (
     <>
-      {/* Fog — soft peach-lilac matching horizon warmth */}
-      <fog attach="fog" args={[0xdfc9d8, 25, 200]} />
+      {/* Fog — soft peach-lilac matching horizon warmth, extended far plane for visible horizon */}
+      <fog attach="fog" args={[0xdfc9d8, 30, 280]} />
 
       {/* Sky Dome — large inverted sphere with vertical gradient shader */}
       <mesh material={skyMat} renderOrder={-1000}>
         <sphereGeometry args={[400, 32, 32]} />
       </mesh>
 
-      {/* Hemispherical & Ambient Fill Lighting */}
-      <hemisphereLight ref={hemiRef} args={[0xf3f8ff, 0x5a5560, 0.75]} />
-      <ambientLight ref={ambientRef} color={0xffeccd} intensity={0.55} />
+      {/* Hemispherical & Ambient Fill Lighting — bumped for clear facade and window details */}
+      <hemisphereLight ref={hemiRef} args={[0xf3f8ff, 0x6c645e, 0.95]} />
+      <ambientLight ref={ambientRef} color={0xffedd6} intensity={0.78} />
 
       {/* Directional Sun with Soft Shadows */}
       <directionalLight
         ref={sunLightRef}
         position={[60, 80, 40]}
-        intensity={1.35}
+        intensity={1.45}
         color={0xfff1d6}
         castShadow
         shadow-mapSize-width={2048}
@@ -247,7 +251,7 @@ export const SkyAndAtmosphere: React.FC = () => {
       {/* Balanced Fill Directional Light: Ensures even street lighting across both facing rows */}
       <directionalLight
         position={[-60, 50, -45]}
-        intensity={0.65}
+        intensity={0.75}
         color={0xffeedb}
       />
 
