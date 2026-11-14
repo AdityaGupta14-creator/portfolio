@@ -80,7 +80,7 @@ export const SketchfabCity: React.FC = () => {
       scaleX: -CITY_CONFIG.SCALE, // Mirrored horizontally
       scaleY: CITY_CONFIG.SCALE * 1.04,
       scaleZ: CITY_CONFIG.SCALE,
-      tintColor: '#f3e8e2',
+      tintColor: '#f8f8f8',
     });
     list.push({
       id: 'north-filler-left-1',
@@ -90,11 +90,11 @@ export const SketchfabCity: React.FC = () => {
       scaleX: CITY_CONFIG.SCALE,
       scaleY: CITY_CONFIG.SCALE * 0.98,
       scaleZ: CITY_CONFIG.SCALE,
-      tintColor: '#ece0d8',
+      tintColor: '#ffffff',
     });
 
-    // 5 Core Interactive Facades mapped to BUILDING_PROXIES
-    const tints = ['#ffffff', '#fdf4ec', '#f9eee8', '#f5ece5', '#efe3db'];
+    // 5 Core Interactive Facades mapped to BUILDING_PROXIES (natural brick, subtle ±5-8% brightness)
+    const tints = ['#ffffff', '#fafafa', '#f6f6f6', '#f8f8f8', '#f2f2f2'];
     BUILDING_PROXIES.forEach((proxy, idx) => {
       list.push({
         id: `interactive-${proxy.id}`,
@@ -118,7 +118,7 @@ export const SketchfabCity: React.FC = () => {
       scaleX: CITY_CONFIG.SCALE,
       scaleY: CITY_CONFIG.SCALE * 1.02,
       scaleZ: CITY_CONFIG.SCALE,
-      tintColor: '#ede2db',
+      tintColor: '#f7f7f7',
     });
     list.push({
       id: 'north-filler-right-2',
@@ -128,12 +128,12 @@ export const SketchfabCity: React.FC = () => {
       scaleX: -CITY_CONFIG.SCALE,
       scaleY: CITY_CONFIG.SCALE * 0.96,
       scaleZ: CITY_CONFIG.SCALE,
-      tintColor: '#e8ddd5',
+      tintColor: '#f4f4f4',
     });
 
     // ── 2. South Row: Facing Buildings (Z = +19.2, rotated 180° into street) ─
     const southXCoords = [-96, -72, -48, -24, 0, 24, 48, 72, 96];
-    const southTints = ['#ece1da', '#f5eae3', '#ede3dc', '#f8eee7', '#ebe0d8', '#f3e8e1', '#eae0d8', '#f6ece5', '#ece2db'];
+    const southTints = ['#ffffff', '#fafafa', '#f7f7f7', '#fdfdfd', '#f5f5f5', '#f8f8f8', '#fcfcfc', '#f6f6f6', '#f9f9f9'];
 
     southXCoords.forEach((x, i) => {
       const variant: 1 | 2 = i % 2 === 0 ? 1 : 2;

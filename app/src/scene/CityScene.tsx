@@ -8,7 +8,7 @@ import { SketchfabCity } from './Buildings/SketchfabCity';
 import { StreetProps } from './Props/StreetProps';
 import { BuildingPins } from './Props/BuildingPins';
 import { TrafficGroup } from './Actors/TrafficGroup';
-import { PedestrianGroup } from './Actors/PedestrianGroup';
+// import { PedestrianGroup } from './Actors/PedestrianGroup';
 import { HostCharacter } from './Actors/HostCharacter';
 import { useAppStore } from '../store/useAppStore';
 import { PORTFOLIO_CONTENT } from '../data/content';
@@ -58,8 +58,8 @@ export const CityScene: React.FC = () => {
       {/* 6. Traffic Simulation: 12 Moving Cars/Cabs with Spinning Wheels & Lights */}
       <TrafficGroup />
 
-      {/* 7. Pedestrian Simulation: 24 Articulated Walking Humanoids */}
-      <PedestrianGroup />
+      {/* 7. Pedestrian Simulation: Pedestrians paused until scene fixes complete */}
+      {/* <PedestrianGroup /> */}
 
       {/* 8. Articulated Host Character (Aditya) with Escort Pathfinding & Speech Bubble */}
       <HostCharacter />

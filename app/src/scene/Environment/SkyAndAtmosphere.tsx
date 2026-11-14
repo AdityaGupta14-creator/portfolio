@@ -29,31 +29,31 @@ const skyFragmentShader = /* glsl */ `
   }
 `;
 
-// Theme configuration — now includes gradient sky colors
+// Theme configuration — soft peach-lilac fog and warm moderate orange-peach lighting
 const THEME_PRESETS = {
   day: {
-    skyHorizon: new THREE.Color(0xf5c6a0),   // warm peach
-    skyZenith: new THREE.Color(0x87ceeb),     // soft blue
-    fog: new THREE.Color(0xf0cdb0),           // match horizon warmth
+    skyHorizon: new THREE.Color(0xf5d9c2),   // warm soft peach
+    skyZenith: new THREE.Color(0x7ebbdb),     // soft blue
+    fog: new THREE.Color(0xdfc9d8),           // soft peach-lilac fog
     hemiSky: new THREE.Color(0xf3f8ff),
-    hemiGround: new THREE.Color(0x4a5568),
-    ambient: new THREE.Color(0xfff5e6),
+    hemiGround: new THREE.Color(0x5a5560),
+    ambient: new THREE.Color(0xfff6ec),
     sun: new THREE.Color(0xfff1d6),
-    sunIntensity: 1.35,
+    sunIntensity: 1.4,
     windowGlow: 0.0,
-    cloudTint: new THREE.Color(0xffeedd),     // warm-tinted clouds
+    cloudTint: new THREE.Color(0xfff5ee),     // soft off-white clouds
   },
   goldenEvening: {
-    skyHorizon: new THREE.Color(0x4a2040),    // dusky mauve
-    skyZenith: new THREE.Color(0x0d0a1a),     // deep night
-    fog: new THREE.Color(0x3a1830),           // match evening horizon
-    hemiSky: new THREE.Color(0x3a334f),
-    hemiGround: new THREE.Color(0xff9e6d),
-    ambient: new THREE.Color(0xff9e6d),
-    sun: new THREE.Color(0xff8345),
-    sunIntensity: 1.05,
+    skyHorizon: new THREE.Color(0xe8c8be),    // warm soft peach-lilac horizon
+    skyZenith: new THREE.Color(0x384a68),     // soft twilight blue
+    fog: new THREE.Color(0xdfc9d8),           // soft peach-lilac fog (no maroon)
+    hemiSky: new THREE.Color(0x7c94b4),       // soft dusk sky fill
+    hemiGround: new THREE.Color(0x5a5560),    // neutral warm ground reflection
+    ambient: new THREE.Color(0xffeccd),       // warm peach-cream ambient (not red)
+    sun: new THREE.Color(0xffd5ad),           // warm moderate orange-peach sun (not red)
+    sunIntensity: 1.35,
     windowGlow: 1.0,
-    cloudTint: new THREE.Color(0xff9977),     // warm sunset clouds
+    cloudTint: new THREE.Color(0xfff0e4),     // soft off-white/peach clouds
   },
 };
 
@@ -211,8 +211,8 @@ export const SkyAndAtmosphere: React.FC = () => {
 
   return (
     <>
-      {/* Fog — near color matches horizon for seamless blend */}
-      <fog attach="fog" args={[0xf0cdb0, 20, 180]} />
+      {/* Fog — soft peach-lilac matching horizon warmth */}
+      <fog attach="fog" args={[0xdfc9d8, 25, 200]} />
 
       {/* Sky Dome — large inverted sphere with vertical gradient shader */}
       <mesh material={skyMat} renderOrder={-1000}>
@@ -220,8 +220,8 @@ export const SkyAndAtmosphere: React.FC = () => {
       </mesh>
 
       {/* Hemispherical & Ambient Fill Lighting */}
-      <hemisphereLight ref={hemiRef} args={[0xf3f8ff, 0x4a5568, 0.65]} />
-      <ambientLight ref={ambientRef} color={0xfff5e6} intensity={0.45} />
+      <hemisphereLight ref={hemiRef} args={[0xf3f8ff, 0x5a5560, 0.75]} />
+      <ambientLight ref={ambientRef} color={0xffeccd} intensity={0.55} />
 
       {/* Directional Sun with Soft Shadows */}
       <directionalLight
