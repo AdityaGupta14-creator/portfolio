@@ -1,7 +1,22 @@
 import React, { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
+import { useGLTF } from '@react-three/drei';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { useAppStore } from '../../store/useAppStore';
+import { PORTFOLIO_CONTENT } from '../../data/content';
+
+// Pre-configure MeshoptDecoder for characters GLTF loading
+useGLTF.preload('/models/characters.opt.glb', true, true, (loader) => {
+  loader.setMeshoptDecoder(MeshoptDecoder);
+});
+
+// Reusable math vectors to avoid heap allocation in useFrame
+const AXIS_X = new THREE.Vector3(1, 0, 0);
+const AXIS_Y = new THREE.Vector3(0, 1, 0);
+const TEMP_Q = new THREE.Quaternion();
+const TEMP_Q2 = new THREE.Quaternion();
 
 // ─── Colour palettes ────────────────────────────────────────────────────────
 const SKIN_TONES = [0xf5d0b5, 0xe0ac8b, 0xc6865c, 0x8d5534, 0xf7dcc4, 0xd4a87c];
@@ -195,7 +210,7 @@ const shadowMat = new THREE.MeshBasicMaterial({
 
 const TOTAL_PEDESTRIANS = 20;
 
-export const PedestrianGroup: React.FC = () => {
+const ProceduralPedestrians: React.FC = () => {
   const { camera } = useThree();
   const scrollProgress = useAppStore((s) => s.scrollProgress);
   const isLowPerformanceMode = useAppStore((s) => s.isLowPerformanceMode);
@@ -557,4 +572,518 @@ export const PedestrianGroup: React.FC = () => {
       })}
     </group>
   );
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  STEP 5: SKETCHFAB REALISTIC PEDESTRIANS WITH PROCEDURAL RIG ANIMATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface CharacterModelDef {
+  key: string;
+  label: string;
+  defaultHeight: number;
+}
+
+const PED_MODELS: CharacterModelDef[] = [
+  { key: '010', label: 'Casual Male', defaultHeight: 1.76 },
+  { key: '011', label: 'Female Customer', defaultHeight: 1.70 },
+  { key: '008', label: 'Teen', defaultHeight: 1.62 },
+  { key: '004', label: 'Male Coat', defaultHeight: 1.78 },
+  { key: '005', label: 'Husband 30s', defaultHeight: 1.75 },
+  { key: '002', label: 'Female Formal', defaultHeight: 1.68 },
+  { key: '003', label: 'Mature Male', defaultHeight: 1.74 },
+  { key: '355', label: 'Young Male', defaultHeight: 1.72 },
+];
+
+const SKETCHFAB_SIDEWALK_LANES: LaneDef[] = [
+  // North Sidewalk (in front of brownstones)
+  { zCenter: -11.5, zSpread: 0.45, xMin: -76, xMax: 76, faceDir: 1 },
+  { zCenter: -8.2, zSpread: 0.45, xMin: -76, xMax: 76, faceDir: -1 },
+  // South Sidewalk (Park promenade)
+  { zCenter: 7.6, zSpread: 0.45, xMin: -76, xMax: 76, faceDir: -1 },
+  { zCenter: 10.6, zSpread: 0.55, xMin: -76, xMax: 76, faceDir: 1 },
+];
+
+const TOTAL_SKETCHFAB_PEDS = 12;
+
+const INITIAL_PED_SPAWNS: { laneIdx: number; x: number; dir: 1 | -1 }[] = [
+  // Zone 1: Building 101 (About Me, X = -52)
+  { laneIdx: 0, x: -47, dir: 1 },
+  { laneIdx: 1, x: -55, dir: -1 },
+  { laneIdx: 2, x: -50, dir: 1 },
+  // Zone 2: Building 103 (Skills, X = -26)
+  { laneIdx: 0, x: -23, dir: 1 },
+  { laneIdx: 2, x: -28, dir: -1 },
+  { laneIdx: 3, x: -28, dir: -1 }, // Pair with 4
+  // Zone 3: Building 105 (Projects, X = 0)
+  { laneIdx: 1, x: -2, dir: 1 },
+  { laneIdx: 0, x: -2, dir: 1 },   // Pair with 6
+  { laneIdx: 2, x: 5, dir: -1 },
+  // Zone 4 & 5: Buildings 107 & 109 (Resume & Contact, X = 26, 52)
+  { laneIdx: 1, x: 24, dir: 1 },
+  { laneIdx: 2, x: 28, dir: -1 },
+  { laneIdx: 0, x: 50, dir: -1 },
+];
+
+function createSketchfabPedestrians(count: number): PedRuntime[] {
+  const rng = mulberry32(108);
+  const peds: PedRuntime[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const spawn = INITIAL_PED_SPAWNS[i % INITIAL_PED_SPAWNS.length];
+    const lane = SKETCHFAB_SIDEWALK_LANES[spawn.laneIdx];
+    const speedMult = 0.85 + rng() * 0.35; // 0.85x – 1.2x
+    const baseSpeed = 0.032;
+    const speed = baseSpeed * speedMult;
+    const strideLength = 1.25;
+    const animSpeed = speed * ((2 * Math.PI) / strideLength) * 60;
+
+    const dir = spawn.dir;
+    const x = spawn.x + (rng() - 0.5) * 2;
+    const z = lane.zCenter + (rng() - 0.5) * 2 * lane.zSpread;
+    const shouldPause = rng() < 0.16;
+
+    peds.push({
+      x,
+      z,
+      yaw: dir > 0 ? Math.PI / 2 : -Math.PI / 2,
+      targetYaw: dir > 0 ? Math.PI / 2 : -Math.PI / 2,
+      dir,
+      speed,
+      speedMult,
+      lane,
+      skin: 0,
+      coat: 0,
+      pants: 0,
+      hair: 0,
+      accessoryColor: 0,
+      hasBackpack: false,
+      hasHat: false,
+      scale: 0.92 + rng() * 0.16,
+      animPhase: rng() * Math.PI * 2,
+      animSpeed,
+      state: shouldPause ? 'pausing' : 'walking',
+      stateTimer: shouldPause ? 2 + rng() * 2 : 7 + rng() * 11,
+      pairPartner: null,
+      pairOffset: 0,
+      visible: true,
+    });
+  }
+
+  // Create 2 walking pairs
+  // Pair 4 & 5 on South sidewalk
+  peds[4].pairPartner = 5;
+  peds[5].pairPartner = 4;
+  peds[4].pairOffset = -0.55;
+  peds[5].pairOffset = 0.55;
+  peds[5].dir = peds[4].dir;
+  peds[5].speed = peds[4].speed;
+  peds[5].speedMult = peds[4].speedMult;
+  peds[5].animSpeed = peds[4].animSpeed;
+  peds[5].x = peds[4].x;
+  peds[5].targetYaw = peds[4].targetYaw;
+  peds[5].yaw = peds[4].yaw;
+
+  // Pair 6 & 7 on North sidewalk
+  peds[6].pairPartner = 7;
+  peds[7].pairPartner = 6;
+  peds[6].pairOffset = -0.55;
+  peds[7].pairOffset = 0.55;
+  peds[7].dir = peds[6].dir;
+  peds[7].speed = peds[6].speed;
+  peds[7].speedMult = peds[6].speedMult;
+  peds[7].animSpeed = peds[6].animSpeed;
+  peds[7].x = peds[6].x;
+  peds[7].targetYaw = peds[6].targetYaw;
+  peds[7].yaw = peds[6].yaw;
+
+  return peds;
+}
+
+interface PedRigBones {
+  thighL: THREE.Bone | null;
+  thighR: THREE.Bone | null;
+  shinL: THREE.Bone | null;
+  shinR: THREE.Bone | null;
+  footL: THREE.Bone | null;
+  footR: THREE.Bone | null;
+  upperArmL: THREE.Bone | null;
+  upperArmR: THREE.Bone | null;
+  forearmL: THREE.Bone | null;
+  forearmR: THREE.Bone | null;
+  spine: THREE.Bone | null;
+  spineUpper: THREE.Bone | null;
+}
+
+interface PedRestQuats {
+  thighL: THREE.Quaternion;
+  thighR: THREE.Quaternion;
+  shinL: THREE.Quaternion;
+  shinR: THREE.Quaternion;
+  footL: THREE.Quaternion;
+  footR: THREE.Quaternion;
+  upperArmL: THREE.Quaternion;
+  upperArmR: THREE.Quaternion;
+  forearmL: THREE.Quaternion;
+  forearmR: THREE.Quaternion;
+  spine: THREE.Quaternion;
+  spineUpper: THREE.Quaternion;
+}
+
+interface ClonedPedestrian {
+  object: THREE.Group;
+  bones: PedRigBones;
+  restQuats: PedRestQuats;
+  shadowMesh: THREE.Mesh;
+}
+
+const SketchfabPedestrians: React.FC = () => {
+  const gltf = useGLTF('/models/characters.opt.glb', true, true, (loader) => {
+    loader.setMeshoptDecoder(MeshoptDecoder);
+  });
+
+  const scrollProgress = useAppStore((s) => s.scrollProgress);
+  const isLowPerformanceMode = useAppStore((s) => s.isLowPerformanceMode);
+  const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
+
+  const pedsRuntime = useRef<PedRuntime[]>(createSketchfabPedestrians(TOTAL_SKETCHFAB_PEDS));
+  const walkBlendArray = useRef<number[]>(new Array(TOTAL_SKETCHFAB_PEDS).fill(1.0));
+  const hostPosRef = useRef<THREE.Vector3>(new THREE.Vector3(-46, 0.14, 7.8));
+
+  // Instantiate each pedestrian using SkeletonUtils.clone so each has its own independent skeleton
+  const clonedPedestrians = useMemo<ClonedPedestrian[]>(() => {
+    return pedsRuntime.current.map((p, index) => {
+      const modelDef = PED_MODELS[index % PED_MODELS.length];
+      const fullClone = SkeletonUtils.clone(gltf.scene);
+
+      // Keep only the target rig
+      const otherRigs: THREE.Object3D[] = [];
+      fullClone.traverse((obj) => {
+        if (obj.name && obj.name.toLowerCase().startsWith('metarig')) {
+          if (!obj.name.includes(modelDef.key)) {
+            otherRigs.push(obj);
+          }
+        }
+      });
+      otherRigs.forEach((r) => r.parent?.remove(r));
+
+      // Measure raw bounding box and scale to realistic stature
+      const box = new THREE.Box3().setFromObject(fullClone);
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      const rawHeight = box.max.y - box.min.y;
+      const targetH = modelDef.defaultHeight * p.scale;
+      const scaleFactor = targetH / (rawHeight || 1.75);
+
+      fullClone.position.set(-center.x, -box.min.y, -center.z);
+
+      const container = new THREE.Group();
+      container.scale.set(scaleFactor, scaleFactor, scaleFactor);
+      container.add(fullClone);
+
+      // Locate skeletal joint bones
+      const b: PedRigBones = {
+        thighL: null,
+        thighR: null,
+        shinL: null,
+        shinR: null,
+        footL: null,
+        footR: null,
+        upperArmL: null,
+        upperArmR: null,
+        forearmL: null,
+        forearmR: null,
+        spine: null,
+        spineUpper: null,
+      };
+
+      fullClone.traverse((o) => {
+        if ((o as THREE.Bone).isBone) {
+          const n = o.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (n.includes('thighl') && !b.thighL) b.thighL = o as THREE.Bone;
+          if (n.includes('thighr') && !b.thighR) b.thighR = o as THREE.Bone;
+          if (n.includes('shinl') && !b.shinL) b.shinL = o as THREE.Bone;
+          if (n.includes('shinr') && !b.shinR) b.shinR = o as THREE.Bone;
+          if (n.includes('footl') && !b.footL) b.footL = o as THREE.Bone;
+          if (n.includes('footr') && !b.footR) b.footR = o as THREE.Bone;
+          if (n.includes('upperarml') && !b.upperArmL) b.upperArmL = o as THREE.Bone;
+          if (n.includes('upperarmr') && !b.upperArmR) b.upperArmR = o as THREE.Bone;
+          if (n.includes('forearml') && !b.forearmL) b.forearmL = o as THREE.Bone;
+          if (n.includes('forearmr') && !b.forearmR) b.forearmR = o as THREE.Bone;
+          if (n === 'spine' || n.includes('spine001')) {
+            if (!b.spine) b.spine = o as THREE.Bone;
+          }
+          if (n.includes('spine002') || n.includes('chest')) {
+            if (!b.spineUpper) b.spineUpper = o as THREE.Bone;
+          }
+        }
+      });
+
+      const rq: PedRestQuats = {
+        thighL: b.thighL ? b.thighL.quaternion.clone() : new THREE.Quaternion(),
+        thighR: b.thighR ? b.thighR.quaternion.clone() : new THREE.Quaternion(),
+        shinL: b.shinL ? b.shinL.quaternion.clone() : new THREE.Quaternion(),
+        shinR: b.shinR ? b.shinR.quaternion.clone() : new THREE.Quaternion(),
+        footL: b.footL ? b.footL.quaternion.clone() : new THREE.Quaternion(),
+        footR: b.footR ? b.footR.quaternion.clone() : new THREE.Quaternion(),
+        upperArmL: b.upperArmL ? b.upperArmL.quaternion.clone() : new THREE.Quaternion(),
+        upperArmR: b.upperArmR ? b.upperArmR.quaternion.clone() : new THREE.Quaternion(),
+        forearmL: b.forearmL ? b.forearmL.quaternion.clone() : new THREE.Quaternion(),
+        forearmR: b.forearmR ? b.forearmR.quaternion.clone() : new THREE.Quaternion(),
+        spine: b.spine ? b.spine.quaternion.clone() : new THREE.Quaternion(),
+        spineUpper: b.spineUpper ? b.spineUpper.quaternion.clone() : new THREE.Quaternion(),
+      };
+
+      // Soft contact shadow disc
+      const shadow = new THREE.Mesh(
+        new THREE.RingGeometry(0.06, 0.48 * p.scale, 24),
+        new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false })
+      );
+      shadow.rotation.x = -Math.PI / 2;
+      shadow.position.y = 0.015;
+
+      const rootWrapper = new THREE.Group();
+      rootWrapper.add(container);
+      rootWrapper.add(shadow);
+
+      return {
+        object: rootWrapper,
+        bones: b,
+        restQuats: rq,
+        shadowMesh: shadow,
+      };
+    });
+  }, [gltf]);
+
+  // Frame simulation loop
+  useFrame(({ camera }, delta) => {
+    const clampedDelta = Math.min(delta, 0.05);
+    const peds = pedsRuntime.current;
+    const blends = walkBlendArray.current;
+
+    // Determine LOD max visible
+    const maxVisible = isLowPerformanceMode
+      ? 6
+      : scrollProgress < 0.12
+        ? 4
+        : TOTAL_SKETCHFAB_PEDS;
+
+    // Estimate host position for collision avoidance
+    if (focusedBuildingIndex !== null) {
+      const b = PORTFOLIO_CONTENT.buildings[focusedBuildingIndex];
+      hostPosRef.current.set(b.xPos - 2.3, 0.16, -11.5);
+    } else if (scrollProgress > 0.88) {
+      hostPosRef.current.set(-7, 0.16, 22.5);
+    } else if (scrollProgress < 0.16) {
+      hostPosRef.current.set(-48, 0.14, 7.8);
+    } else {
+      const tourT = (scrollProgress - 0.16) / (0.88 - 0.16);
+      hostPosRef.current.set(-52 + tourT * 104, 0.14, 7.8);
+    }
+
+    for (let i = 0; i < peds.length; i++) {
+      const p = peds[i];
+      const cloned = clonedPedestrians[i];
+      if (!cloned) continue;
+
+      // LOD visibility
+      p.visible = i < maxVisible;
+      cloned.object.visible = p.visible;
+      if (!p.visible) continue;
+
+      // Behaviour state machine
+      p.stateTimer -= clampedDelta;
+      if (p.state === 'pausing') {
+        blends[i] = Math.max(0, blends[i] - clampedDelta * 3.0);
+        if (p.stateTimer <= 0) {
+          p.state = 'walking';
+          p.stateTimer = 7 + Math.random() * 12;
+        }
+      } else if (p.state === 'turning') {
+        blends[i] = Math.max(0.2, blends[i] - clampedDelta * 2.0);
+        let diff = p.targetYaw - p.yaw;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        p.yaw += diff * 4.0 * clampedDelta;
+        if (Math.abs(diff) < 0.08) {
+          p.yaw = p.targetYaw;
+          p.state = 'walking';
+          p.stateTimer = 7 + Math.random() * 12;
+        }
+      } else {
+        // Walking
+        blends[i] = Math.min(1.0, blends[i] + clampedDelta * 3.0);
+        p.x += p.speed * p.dir * 60 * clampedDelta;
+        p.animPhase += p.animSpeed * clampedDelta;
+
+        // Path bounds: smooth turn at lane ends
+        if (
+          (p.dir > 0 && p.x > p.lane.xMax - 2) ||
+          (p.dir < 0 && p.x < p.lane.xMin + 2)
+        ) {
+          p.dir = (p.dir * -1) as 1 | -1;
+          p.targetYaw = p.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+          p.state = 'turning';
+          p.stateTimer = 0;
+          if (p.pairPartner !== null) {
+            const partner = peds[p.pairPartner];
+            partner.dir = p.dir;
+            partner.targetYaw = p.targetYaw;
+            partner.state = 'turning';
+            partner.stateTimer = 0;
+          }
+        }
+
+        // Random pause
+        if (p.stateTimer <= 0 && Math.random() < 0.006) {
+          p.state = 'pausing';
+          p.stateTimer = 2.0 + Math.random() * 2.5;
+          if (p.pairPartner !== null) {
+            const partner = peds[p.pairPartner];
+            partner.state = 'pausing';
+            partner.stateTimer = p.stateTimer;
+          }
+        }
+      }
+
+      // Smooth yaw interpolation
+      let yawDiff = p.targetYaw - p.yaw;
+      while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+      while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+      p.yaw += yawDiff * 3.5 * clampedDelta;
+
+      // Pair lateral offset
+      let zFinal = p.z;
+      if (p.pairPartner !== null) {
+        zFinal = p.z + p.pairOffset;
+      }
+
+      // Pairwise collision avoidance
+      for (let j = 0; j < peds.length; j++) {
+        if (j === i || !peds[j].visible) continue;
+        if (j === p.pairPartner) continue;
+        const dx = p.x - peds[j].x;
+        const dz = zFinal - peds[j].z;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 2.4 && dist > 0.01) {
+          const push = (2.4 - dist) * 0.35 * clampedDelta * 60;
+          p.x += (dx / dist) * push;
+        }
+      }
+
+      // Host character avoidance
+      const hDx = p.x - hostPosRef.current.x;
+      const hDz = zFinal - hostPosRef.current.z;
+      const hDist = Math.hypot(hDx, hDz);
+      if (hDist < 2.8 && hDist > 0.01) {
+        const push = (2.8 - hDist) * 0.5 * clampedDelta * 60;
+        p.x += (hDx / hDist) * push;
+      }
+
+      // Clamp within lane bounds
+      p.x = Math.max(p.lane.xMin, Math.min(p.lane.xMax, p.x));
+
+      // Root positioning and bobbing
+      const blend = blends[i];
+      const sinCycle = Math.sin(p.animPhase);
+      const cosCycle = Math.cos(p.animPhase);
+      const bob = Math.abs(cosCycle) * 0.032 * blend;
+      const yBase = p.lane.zCenter < 0 ? 0.16 : 0.10;
+
+      cloned.object.position.set(p.x, yBase + bob, zFinal);
+      cloned.object.rotation.y = p.yaw;
+
+      // Distance check for contact shadow LOD
+      const camDist = camera.position.distanceTo(cloned.object.position);
+      cloned.shadowMesh.visible = camDist < 55;
+
+      // Bone walk cycle rotations
+      const { bones, restQuats } = cloned;
+
+      // 1. Thighs
+      const thighAngle = sinCycle * 0.42 * blend;
+      if (bones.thighL) {
+        TEMP_Q.setFromAxisAngle(AXIS_X, thighAngle);
+        bones.thighL.quaternion.copy(restQuats.thighL).multiply(TEMP_Q);
+      }
+      if (bones.thighR) {
+        TEMP_Q.setFromAxisAngle(AXIS_X, -thighAngle);
+        bones.thighR.quaternion.copy(restQuats.thighR).multiply(TEMP_Q);
+      }
+
+      // 2. Shins (clamped knee bend)
+      if (bones.shinL) {
+        const kneeBend = Math.max(0, -sinCycle) * (0.55 * blend);
+        TEMP_Q.setFromAxisAngle(AXIS_X, kneeBend);
+        bones.shinL.quaternion.copy(restQuats.shinL).multiply(TEMP_Q);
+      }
+      if (bones.shinR) {
+        const kneeBend = Math.max(0, sinCycle) * (0.55 * blend);
+        TEMP_Q.setFromAxisAngle(AXIS_X, kneeBend);
+        bones.shinR.quaternion.copy(restQuats.shinR).multiply(TEMP_Q);
+      }
+
+      // 3. Feet
+      if (bones.footL) {
+        const footTilt = sinCycle * (0.18 * blend);
+        TEMP_Q.setFromAxisAngle(AXIS_X, -footTilt);
+        bones.footL.quaternion.copy(restQuats.footL).multiply(TEMP_Q);
+      }
+      if (bones.footR) {
+        const footTilt = -sinCycle * (0.18 * blend);
+        TEMP_Q.setFromAxisAngle(AXIS_X, -footTilt);
+        bones.footR.quaternion.copy(restQuats.footR).multiply(TEMP_Q);
+      }
+
+      // 4. Arms (opposite phase)
+      const armAngleL = sinCycle * (0.35 * blend);
+      if (bones.upperArmL) {
+        TEMP_Q.setFromAxisAngle(AXIS_X, armAngleL);
+        TEMP_Q2.setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.18);
+        TEMP_Q.multiply(TEMP_Q2);
+        bones.upperArmL.quaternion.copy(restQuats.upperArmL).multiply(TEMP_Q);
+      }
+      if (bones.upperArmR) {
+        TEMP_Q.setFromAxisAngle(AXIS_X, -armAngleL);
+        TEMP_Q2.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -0.18);
+        TEMP_Q.multiply(TEMP_Q2);
+        bones.upperArmR.quaternion.copy(restQuats.upperArmR).multiply(TEMP_Q);
+      }
+
+      // 5. Forearms (elbow flexion)
+      if (bones.forearmL) {
+        const elbowBend = 0.12 + Math.max(0, armAngleL) * 0.4;
+        TEMP_Q.setFromAxisAngle(AXIS_X, elbowBend);
+        bones.forearmL.quaternion.copy(restQuats.forearmL).multiply(TEMP_Q);
+      }
+      if (bones.forearmR) {
+        const elbowBend = 0.12 + Math.max(0, -armAngleL) * 0.4;
+        TEMP_Q.setFromAxisAngle(AXIS_X, elbowBend);
+        bones.forearmR.quaternion.copy(restQuats.forearmR).multiply(TEMP_Q);
+      }
+
+      // 6. Spine twist & breathing
+      if (bones.spine) {
+        const twist = -sinCycle * 0.04 * blend;
+        const breath = (1 - blend) * Math.sin(p.animPhase * 0.4) * 0.015;
+        TEMP_Q.setFromAxisAngle(AXIS_Y, twist);
+        TEMP_Q2.setFromAxisAngle(AXIS_X, breath);
+        TEMP_Q.multiply(TEMP_Q2);
+        bones.spine.quaternion.copy(restQuats.spine).multiply(TEMP_Q);
+      }
+    }
+  });
+
+  return (
+    <group>
+      {clonedPedestrians.map((cloned, idx) => (
+        <primitive key={idx} object={cloned.object} />
+      ))}
+    </group>
+  );
+};
+
+export const PedestrianGroup: React.FC = () => {
+  const useOldCity = useAppStore((s) => s.useOldCity);
+  return useOldCity ? <ProceduralPedestrians /> : <SketchfabPedestrians />;
 };
