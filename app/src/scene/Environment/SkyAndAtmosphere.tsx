@@ -4,27 +4,56 @@ import * as THREE from 'three';
 import { useAppStore } from '../../store/useAppStore';
 import { materials } from '../../utils/proceduralTextures';
 
-// Theme configuration matching vanilla implementation exactly
+// ── Sky gradient shader: vertical blend from horizon to zenith ──────────
+const skyVertexShader = /* glsl */ `
+  varying vec3 vWorldPosition;
+  void main() {
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldPosition = worldPos.xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const skyFragmentShader = /* glsl */ `
+  uniform vec3 uHorizon;
+  uniform vec3 uZenith;
+  uniform float uExponent;
+  varying vec3 vWorldPosition;
+  void main() {
+    // Normalize height: 0 at horizon, 1 at top of dome
+    float h = normalize(vWorldPosition).y;
+    // Remap: below horizon → 0, above → 0..1 with exponent curve
+    float t = pow(max(h, 0.0), uExponent);
+    vec3 color = mix(uHorizon, uZenith, t);
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+// Theme configuration — now includes gradient sky colors
 const THEME_PRESETS = {
   day: {
-    bg: new THREE.Color(0xdbe3ea),
-    fog: new THREE.Color(0xdbe3ea),
+    skyHorizon: new THREE.Color(0xf5c6a0),   // warm peach
+    skyZenith: new THREE.Color(0x87ceeb),     // soft blue
+    fog: new THREE.Color(0xf0cdb0),           // match horizon warmth
     hemiSky: new THREE.Color(0xf3f8ff),
     hemiGround: new THREE.Color(0x4a5568),
     ambient: new THREE.Color(0xfff5e6),
     sun: new THREE.Color(0xfff1d6),
     sunIntensity: 1.35,
     windowGlow: 0.0,
+    cloudTint: new THREE.Color(0xffeedd),     // warm-tinted clouds
   },
   goldenEvening: {
-    bg: new THREE.Color(0x231d33),
-    fog: new THREE.Color(0x231d33),
+    skyHorizon: new THREE.Color(0x4a2040),    // dusky mauve
+    skyZenith: new THREE.Color(0x0d0a1a),     // deep night
+    fog: new THREE.Color(0x3a1830),           // match evening horizon
     hemiSky: new THREE.Color(0x3a334f),
     hemiGround: new THREE.Color(0xff9e6d),
     ambient: new THREE.Color(0xff9e6d),
     sun: new THREE.Color(0xff8345),
     sunIntensity: 1.05,
     windowGlow: 1.0,
+    cloudTint: new THREE.Color(0xff9977),     // warm sunset clouds
   },
 };
 
@@ -49,6 +78,25 @@ export const SkyAndAtmosphere: React.FC = () => {
   const sunLightRef = useRef<THREE.DirectionalLight>(null);
   const haloRef = useRef<THREE.Mesh>(null);
   const cloudGroupRefs = useRef<(THREE.Group | null)[]>([]);
+
+  // Sky dome shader material — lerped each frame
+  const skyUniforms = useRef({
+    uHorizon: { value: THEME_PRESETS.day.skyHorizon.clone() },
+    uZenith: { value: THEME_PRESETS.day.skyZenith.clone() },
+    uExponent: { value: 0.45 },
+  });
+
+  const skyMat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: skyVertexShader,
+        fragmentShader: skyFragmentShader,
+        uniforms: skyUniforms.current,
+        side: THREE.BackSide,
+        depthWrite: false,
+      }),
+    []
+  );
 
   // Generate 24 clouds matching vanilla distribution
   const clouds = useMemo<CloudInstance[]>(() => {
@@ -105,37 +153,45 @@ export const SkyAndAtmosphere: React.FC = () => {
   useFrame(({ clock }) => {
     const elapsed = clock.getElapsedTime();
     const target = isGoldenEvening ? THEME_PRESETS.goldenEvening : THEME_PRESETS.day;
+    const rate = 0.015;
 
-    // Smooth lerp scene background & fog (rate: 0.015)
-    if (scene.background instanceof THREE.Color) {
-      scene.background.lerp(target.bg, 0.015);
-    }
+    // Smooth lerp sky gradient uniforms
+    skyUniforms.current.uHorizon.value.lerp(target.skyHorizon, rate);
+    skyUniforms.current.uZenith.value.lerp(target.skyZenith, rate);
+
+    // Disable scene.background so the sky dome is visible
+    scene.background = null;
+
+    // Smooth lerp fog to match horizon
     if (scene.fog) {
-      scene.fog.color.lerp(target.fog, 0.015);
+      scene.fog.color.lerp(target.fog, rate);
     }
 
     // Smooth lerp hemisphere light
     if (hemiRef.current) {
-      hemiRef.current.color.lerp(target.hemiSky, 0.015);
-      hemiRef.current.groundColor.lerp(target.hemiGround, 0.015);
+      hemiRef.current.color.lerp(target.hemiSky, rate);
+      hemiRef.current.groundColor.lerp(target.hemiGround, rate);
     }
 
     // Smooth lerp ambient light
     if (ambientRef.current) {
-      ambientRef.current.color.lerp(target.ambient, 0.015);
+      ambientRef.current.color.lerp(target.ambient, rate);
     }
 
     // Smooth lerp directional sun light
     if (sunLightRef.current) {
-      sunLightRef.current.color.lerp(target.sun, 0.015);
-      sunLightRef.current.intensity += (target.sunIntensity - sunLightRef.current.intensity) * 0.015;
+      sunLightRef.current.color.lerp(target.sun, rate);
+      sunLightRef.current.intensity += (target.sunIntensity - sunLightRef.current.intensity) * rate;
     }
 
     // Smooth lerp window emissive glow
     materials.upperWindow.emissiveIntensity +=
-      (target.windowGlow - materials.upperWindow.emissiveIntensity) * 0.015;
+      (target.windowGlow - materials.upperWindow.emissiveIntensity) * rate;
     materials.storefrontWindow.emissiveIntensity +=
-      (target.windowGlow - materials.storefrontWindow.emissiveIntensity) * 0.015;
+      (target.windowGlow - materials.storefrontWindow.emissiveIntensity) * rate;
+
+    // Lerp cloud tint
+    cloudMat.color.lerp(target.cloudTint, rate);
 
     // Pulse sun halo breathing animation
     if (haloRef.current) {
@@ -155,9 +211,13 @@ export const SkyAndAtmosphere: React.FC = () => {
 
   return (
     <>
-      {/* Background color and depth fog */}
-      <color attach="background" args={[0xdbe3ea]} />
-      <fog attach="fog" args={[0xdbe3ea, 20, 180]} />
+      {/* Fog — near color matches horizon for seamless blend */}
+      <fog attach="fog" args={[0xf0cdb0, 20, 180]} />
+
+      {/* Sky Dome — large inverted sphere with vertical gradient shader */}
+      <mesh material={skyMat} renderOrder={-1000}>
+        <sphereGeometry args={[400, 32, 32]} />
+      </mesh>
 
       {/* Hemispherical & Ambient Fill Lighting */}
       <hemisphereLight ref={hemiRef} args={[0xf3f8ff, 0x4a5568, 0.65]} />

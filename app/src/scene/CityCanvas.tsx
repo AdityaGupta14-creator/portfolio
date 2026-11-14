@@ -22,10 +22,9 @@ export const CityCanvas: React.FC = () => {
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1.0,
         }}
-        onCreated={({ gl, scene }) => {
+        onCreated={({ gl }) => {
           gl.shadowMap.enabled = shadowsEnabled;
           gl.shadowMap.type = THREE.PCFSoftShadowMap;
-          scene.background = new THREE.Color(0xdbe3ea);
         }}
       >
         <PerformanceManager />
