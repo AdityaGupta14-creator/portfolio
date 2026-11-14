@@ -1,5 +1,5 @@
-import React, { Suspense, useMemo, useState, useEffect } from 'react';
-import { Canvas } from '@react-three/fiber';
+import React, { Suspense, useMemo, useState, useEffect, useRef } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Html, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
@@ -66,7 +66,6 @@ const CityModelViewer: React.FC<CityModelProps> = ({ wireframe, grounded, modelU
     return clone;
   }, [gltf, wireframe]);
 
-  // Compute bounding box
   const bounds = useMemo(() => {
     const box = new THREE.Box3().setFromObject(cityScene);
     const size = new THREE.Vector3();
@@ -74,13 +73,11 @@ const CityModelViewer: React.FC<CityModelProps> = ({ wireframe, grounded, modelU
     return { box, size };
   }, [cityScene]);
 
-  // If grounded is true, raise the model so its lowest point rests at Y = 0
   const yOffset = grounded ? -bounds.box.min.y : 0;
 
   return (
     <group position={[0, yOffset, 0]}>
       <primitive object={cityScene} />
-      {/* Visual Bounding Box Wireframe */}
       <box3Helper args={[bounds.box, new THREE.Color(0x38bdf8)]} />
     </group>
   );
@@ -107,7 +104,6 @@ const CharactersRowViewer: React.FC<CharactersRowProps> = ({ wireframe, modelUrl
   });
 
   const isolatedCharacters = useMemo<IsolatedCharacter[]>(() => {
-    // Find all 12 metarig roots in the gltf scene
     const metarigNodes: THREE.Object3D[] = [];
     gltf.scene.traverse((obj) => {
       if (obj.name && obj.name.toLowerCase().startsWith('metarig')) {
@@ -116,7 +112,6 @@ const CharactersRowViewer: React.FC<CharactersRowProps> = ({ wireframe, modelUrl
     });
 
     return metarigNodes.map((rigRoot, index) => {
-      // Clone the entire scene to keep skeletons intact, then keep only this metarig
       const fullClone = SkeletonUtils.clone(gltf.scene);
       const otherRigs: THREE.Object3D[] = [];
 
@@ -128,18 +123,15 @@ const CharactersRowViewer: React.FC<CharactersRowProps> = ({ wireframe, modelUrl
         }
       });
 
-      // Remove the other 11 rigs so each character has only its own skeleton and mesh
       otherRigs.forEach((r) => {
         if (r.parent) r.parent.remove(r);
       });
 
-      // Measure character bounding box
       const box = new THREE.Box3().setFromObject(fullClone);
       const center = new THREE.Vector3();
       box.getCenter(center);
       const height = box.max.y - box.min.y;
 
-      // Position side-by-side in a single row along X
       const spacing = 2.4;
       const xPos = (index - 5.5) * spacing;
       fullClone.position.set(xPos - center.x, -box.min.y, -center.z);
@@ -168,7 +160,6 @@ const CharactersRowViewer: React.FC<CharactersRowProps> = ({ wireframe, modelUrl
       {isolatedCharacters.map((char) => (
         <group key={char.id}>
           <primitive object={char.object} />
-          {/* HTML Label above character head */}
           <Html position={[char.xPos, char.height + 0.35, 0]} center distanceFactor={15}>
             <div className="bg-slate-900/90 border border-cyan-500/60 rounded-md px-2.5 py-1 text-center shadow-lg pointer-events-none whitespace-nowrap backdrop-blur-sm">
               <div className="text-[10px] font-mono text-cyan-400 font-bold uppercase tracking-wider">
@@ -188,18 +179,301 @@ const CharactersRowViewer: React.FC<CharactersRowProps> = ({ wireframe, modelUrl
   );
 };
 
+// ── Tab 3: Step 5 Single Character Procedural Walk Cycle Test ─────────────────
+interface WalkTestViewerProps {
+  modelUrl: string;
+  wireframe: boolean;
+  speed: number;
+  strideAmp: number;
+  freezePose?: 'stride' | 'pass' | null;
+}
+
+interface WalkRigBones {
+  thighL: THREE.Bone | null;
+  thighR: THREE.Bone | null;
+  shinL: THREE.Bone | null;
+  shinR: THREE.Bone | null;
+  footL: THREE.Bone | null;
+  footR: THREE.Bone | null;
+  upperArmL: THREE.Bone | null;
+  upperArmR: THREE.Bone | null;
+  forearmL: THREE.Bone | null;
+  forearmR: THREE.Bone | null;
+  spine: THREE.Bone | null;
+  spineUpper: THREE.Bone | null;
+}
+
+interface RestQuaternions {
+  thighL: THREE.Quaternion;
+  thighR: THREE.Quaternion;
+  shinL: THREE.Quaternion;
+  shinR: THREE.Quaternion;
+  footL: THREE.Quaternion;
+  footR: THREE.Quaternion;
+  upperArmL: THREE.Quaternion;
+  upperArmR: THREE.Quaternion;
+  forearmL: THREE.Quaternion;
+  forearmR: THREE.Quaternion;
+  spine: THREE.Quaternion;
+  spineUpper: THREE.Quaternion;
+}
+
+const SingleCharacterWalkViewer: React.FC<WalkTestViewerProps> = ({
+  modelUrl,
+  wireframe,
+  speed,
+  strideAmp,
+  freezePose,
+}) => {
+  const gltf = useGLTF(modelUrl, true, true, (loader) => {
+    loader.setMeshoptDecoder(MeshoptDecoder);
+  });
+
+  const rootGroupRef = useRef<THREE.Group>(null);
+
+  // Isolate Rig 0: Business man (Host character)
+  const { characterObj, bones, restQuats, scaledHeight } = useMemo(() => {
+    const fullClone = SkeletonUtils.clone(gltf.scene);
+
+    // Keep only metarig.009_38 (Business man / Host)
+    const otherRigs: THREE.Object3D[] = [];
+    fullClone.traverse((obj) => {
+      if (obj.name && obj.name.toLowerCase().startsWith('metarig')) {
+        if (!obj.name.includes('009') && !obj.name.includes('Business')) {
+          otherRigs.push(obj);
+        }
+      }
+    });
+    otherRigs.forEach((r) => {
+      if (r.parent) r.parent.remove(r);
+    });
+
+    // Update matrix world before measuring bounding box
+    fullClone.updateMatrixWorld(true);
+
+    const rawBox = new THREE.Box3().setFromObject(fullClone);
+    const rawCenter = new THREE.Vector3();
+    rawBox.getCenter(rawCenter);
+    const rawHeight = rawBox.max.y - rawBox.min.y;
+
+    // Scale precisely to 1.75 units tall (human scale)
+    const targetHeight = 1.75;
+    const scaleFactor = targetHeight / (rawHeight || 1.75);
+
+    // Re-center X and Z at 0, feet exactly on the pavement Y=0
+    fullClone.position.set(-rawCenter.x, -rawBox.min.y, -rawCenter.z);
+    
+    // Create container group with uniform scale
+    const container = new THREE.Group();
+    container.scale.set(scaleFactor, scaleFactor, scaleFactor);
+    container.add(fullClone);
+
+    // Locate the 38-bone Rigify skeletal joints
+    const b: WalkRigBones = {
+      thighL: null,
+      thighR: null,
+      shinL: null,
+      shinR: null,
+      footL: null,
+      footR: null,
+      upperArmL: null,
+      upperArmR: null,
+      forearmL: null,
+      forearmR: null,
+      spine: null,
+      spineUpper: null,
+    };
+
+    fullClone.traverse((o) => {
+      if (o instanceof THREE.Bone) {
+        const n = o.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (n.includes('thighl')) b.thighL = o;
+        if (n.includes('thighr')) b.thighR = o;
+        if (n.includes('shinl')) b.shinL = o;
+        if (n.includes('shinr')) b.shinR = o;
+        if (n.includes('footl') && !n.includes('heel')) b.footL = o;
+        if (n.includes('footr') && !n.includes('heel')) b.footR = o;
+        if (n.includes('upperarml')) b.upperArmL = o;
+        if (n.includes('upperarmr')) b.upperArmR = o;
+        if (n.includes('forearml') && !n.includes('001') && !n.includes('002')) b.forearmL = o;
+        if (n.includes('forearmr') && !n.includes('001') && !n.includes('002')) b.forearmR = o;
+        if (n.includes('spine36') || n === 'spine') b.spine = o;
+        if (n.includes('spine003') || n.includes('spine004')) b.spineUpper = o;
+      }
+
+      if (wireframe && o instanceof THREE.Mesh && o.material) {
+        (o.material as THREE.MeshStandardMaterial).wireframe = true;
+      }
+    });
+
+    // Store rest orientations
+    const rq: RestQuaternions = {
+      thighL: b.thighL ? b.thighL.quaternion.clone() : new THREE.Quaternion(),
+      thighR: b.thighR ? b.thighR.quaternion.clone() : new THREE.Quaternion(),
+      shinL: b.shinL ? b.shinL.quaternion.clone() : new THREE.Quaternion(),
+      shinR: b.shinR ? b.shinR.quaternion.clone() : new THREE.Quaternion(),
+      footL: b.footL ? b.footL.quaternion.clone() : new THREE.Quaternion(),
+      footR: b.footR ? b.footR.quaternion.clone() : new THREE.Quaternion(),
+      upperArmL: b.upperArmL ? b.upperArmL.quaternion.clone() : new THREE.Quaternion(),
+      upperArmR: b.upperArmR ? b.upperArmR.quaternion.clone() : new THREE.Quaternion(),
+      forearmL: b.forearmL ? b.forearmL.quaternion.clone() : new THREE.Quaternion(),
+      forearmR: b.forearmR ? b.forearmR.quaternion.clone() : new THREE.Quaternion(),
+      spine: b.spine ? b.spine.quaternion.clone() : new THREE.Quaternion(),
+      spineUpper: b.spineUpper ? b.spineUpper.quaternion.clone() : new THREE.Quaternion(),
+    };
+
+    return { characterObj: container, bones: b, restQuats: rq, scaledHeight: targetHeight };
+  }, [gltf, wireframe]);
+
+  // Procedural walk animation cycle driven on useFrame
+  useFrame(({ clock }) => {
+    let elapsed = clock.getElapsedTime() * 4.2 * speed;
+    if (freezePose === 'stride') {
+      elapsed = Math.PI * 0.5; // Peak stride extension
+    } else if (freezePose === 'pass') {
+      elapsed = 0; // Cross-over neutral stance
+    }
+    const sinCycle = Math.sin(elapsed);
+    const cosCycle = Math.cos(elapsed);
+
+    // 1. Thigh swing (local X axis tested & calibrated)
+    const thighAngle = sinCycle * strideAmp;
+    if (bones.thighL) {
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), thighAngle);
+      bones.thighL.quaternion.copy(restQuats.thighL).multiply(q);
+    }
+    if (bones.thighR) {
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -thighAngle);
+      bones.thighR.quaternion.copy(restQuats.thighR).multiply(q);
+    }
+
+    // 2. Knee bend (shin bends backward when leg is in back/passing phase, clamped >= 0)
+    if (bones.shinL) {
+      const kneeBend = Math.max(0, -sinCycle) * (strideAmp * 1.35);
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), kneeBend);
+      bones.shinL.quaternion.copy(restQuats.shinL).multiply(q);
+    }
+    if (bones.shinR) {
+      const kneeBend = Math.max(0, sinCycle) * (strideAmp * 1.35);
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), kneeBend);
+      bones.shinR.quaternion.copy(restQuats.shinR).multiply(q);
+    }
+
+    // 3. Foot / Ankle compensation so feet stay level during stride
+    if (bones.footL) {
+      const footTilt = sinCycle * (strideAmp * 0.45);
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -footTilt);
+      bones.footL.quaternion.copy(restQuats.footL).multiply(q);
+    }
+    if (bones.footR) {
+      const footTilt = -sinCycle * (strideAmp * 0.45);
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -footTilt);
+      bones.footR.quaternion.copy(restQuats.footR).multiply(q);
+    }
+
+    // 4. Arms swing opposite to legs (local X axis)
+    const armAngle = -sinCycle * (strideAmp * 0.85);
+    if (bones.upperArmL) {
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), armAngle);
+      bones.upperArmL.quaternion.copy(restQuats.upperArmL).multiply(q);
+    }
+    if (bones.upperArmR) {
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -armAngle);
+      bones.upperArmR.quaternion.copy(restQuats.upperArmR).multiply(q);
+    }
+
+    // 5. Forearm subtle natural elbow bend
+    if (bones.forearmL) {
+      const elbowBend = 0.15 + Math.max(0, -armAngle) * 0.5;
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), elbowBend);
+      bones.forearmL.quaternion.copy(restQuats.forearmL).multiply(q);
+    }
+    if (bones.forearmR) {
+      const elbowBend = 0.15 + Math.max(0, armAngle) * 0.5;
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), elbowBend);
+      bones.forearmR.quaternion.copy(restQuats.forearmR).multiply(q);
+    }
+
+    // 6. Spine twist & subtle pelvis bobbing
+    if (bones.spine) {
+      const twist = -sinCycle * 0.05;
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), twist);
+      bones.spine.quaternion.copy(restQuats.spine).multiply(q);
+    }
+    if (bones.spineUpper) {
+      const counterTwist = sinCycle * 0.035;
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), counterTwist);
+      bones.spineUpper.quaternion.copy(restQuats.spineUpper).multiply(q);
+    }
+
+    // 7. Natural vertical hip bob (two bounces per full gait cycle)
+    if (rootGroupRef.current) {
+      const bob = Math.abs(cosCycle) * 0.032;
+      rootGroupRef.current.position.y = bob;
+    }
+  });
+
+  return (
+    <group>
+      {/* Animated Character Group */}
+      <group ref={rootGroupRef}>
+        <primitive object={characterObj} />
+      </group>
+
+      {/* Soft Contact Shadow Disc under character feet */}
+      <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.05, 0.55, 32]} />
+        <meshBasicMaterial color="#000000" transparent opacity={0.35} />
+      </mesh>
+
+      {/* Floating Measurement Indicator */}
+      <Html position={[0, scaledHeight + 0.35, 0]} center distanceFactor={10}>
+        <div className="bg-slate-900/95 border border-emerald-500/80 rounded-lg px-3 py-1.5 text-center shadow-2xl pointer-events-none whitespace-nowrap backdrop-blur-md">
+          <div className="text-[11px] font-mono text-emerald-400 font-bold uppercase tracking-wider">
+            Host: Business Man (Calibrated Walk)
+          </div>
+          <div className="text-[9px] font-mono text-slate-300">
+            Scale: <span className="text-amber-300">1.75 m</span> • Swing Axis: <span className="text-cyan-300">Local X</span>
+          </div>
+          <div className="text-[8px] font-mono text-slate-400">
+            Opposite Phase Arms &amp; Legs • Backward Knee Bend Clamped
+          </div>
+        </div>
+      </Html>
+    </group>
+  );
+};
+
 // ── Main Asset Debug Page ───────────────────────────────────────────────────
 export const AssetDebugPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'city' | 'characters'>('city');
+  const [activeTab, setActiveTab] = useState<'city' | 'characters' | 'walk'>('walk');
   const [wireframe, setWireframe] = useState<boolean>(false);
   const [grounded, setGrounded] = useState<boolean>(true);
   const [useOpt, setUseOpt] = useState<boolean>(true);
+  const [walkSpeed, setWalkSpeed] = useState<number>(1.0);
+  const [strideAmp, setStrideAmp] = useState<number>(0.42);
+  const [freezePose, setFreezePose] = useState<'stride' | 'pass' | null>(null);
+
+  // Check URL params for tab override (e.g. ?tab=walk)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get('tab') === 'city') setActiveTab('city');
+      if (p.get('tab') === 'characters') setActiveTab('characters');
+      if (p.get('tab') === 'walk') {
+        setActiveTab('walk');
+        if (p.get('pose') === 'stride') setFreezePose('stride');
+        if (p.get('pose') === 'pass') setFreezePose('pass');
+      }
+    }
+  }, []);
 
   // Keyboard shortcut to switch tabs
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === '1') setActiveTab('city');
       if (e.key === '2') setActiveTab('characters');
+      if (e.key === '3') setActiveTab('walk');
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
@@ -237,7 +511,7 @@ export const AssetDebugPage: React.FC = () => {
         <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-lg border border-slate-700">
           <button
             onClick={() => setActiveTab('city')}
-            className={`px-3.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
               activeTab === 'city'
                 ? 'bg-amber-500 text-slate-950 font-semibold shadow-sm'
                 : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
@@ -247,13 +521,23 @@ export const AssetDebugPage: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('characters')}
-            className={`px-3.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
               activeTab === 'characters'
                 ? 'bg-amber-500 text-slate-950 font-semibold shadow-sm'
                 : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
             }`}
           >
             👥 12 Characters (Tab 2)
+          </button>
+          <button
+            onClick={() => setActiveTab('walk')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              activeTab === 'walk'
+                ? 'bg-emerald-500 text-slate-950 font-bold shadow-md animate-pulse'
+                : 'text-emerald-400 hover:text-emerald-300 hover:bg-slate-700/50'
+            }`}
+          >
+            🚶 Walk Calibration (Step 5)
           </button>
         </div>
 
@@ -271,6 +555,64 @@ export const AssetDebugPage: React.FC = () => {
             >
               {grounded ? '✓ Base Grounded (Y=0)' : 'Raw Origin'}
             </button>
+          )}
+
+          {activeTab === 'walk' && (
+            <div className="flex items-center gap-3 bg-slate-800/90 px-3 py-1 rounded border border-slate-700 text-[11px] font-mono">
+              <span className="text-slate-400">Speed:</span>
+              <button
+                onClick={() => setWalkSpeed(0.5)}
+                className={`px-1.5 py-0.5 rounded ${walkSpeed === 0.5 ? 'bg-emerald-500 text-black font-bold' : 'text-slate-300'}`}
+              >
+                0.5x
+              </button>
+              <button
+                onClick={() => setWalkSpeed(1.0)}
+                className={`px-1.5 py-0.5 rounded ${walkSpeed === 1.0 ? 'bg-emerald-500 text-black font-bold' : 'text-slate-300'}`}
+              >
+                1.0x
+              </button>
+              <button
+                onClick={() => setWalkSpeed(1.5)}
+                className={`px-1.5 py-0.5 rounded ${walkSpeed === 1.5 ? 'bg-emerald-500 text-black font-bold' : 'text-slate-300'}`}
+              >
+                1.5x
+              </button>
+              <span className="text-slate-500">|</span>
+              <span className="text-slate-400">Stride:</span>
+              <button
+                onClick={() => setStrideAmp(0.3)}
+                className={`px-1.5 py-0.5 rounded ${strideAmp === 0.3 ? 'bg-cyan-500 text-black font-bold' : 'text-slate-300'}`}
+              >
+                Small
+              </button>
+              <button
+                onClick={() => setStrideAmp(0.42)}
+                className={`px-1.5 py-0.5 rounded ${strideAmp === 0.42 ? 'bg-cyan-500 text-black font-bold' : 'text-slate-300'}`}
+              >
+                Normal
+              </button>
+              <button
+                onClick={() => setStrideAmp(0.55)}
+                className={`px-1.5 py-0.5 rounded ${strideAmp === 0.55 ? 'bg-cyan-500 text-black font-bold' : 'text-slate-300'}`}
+              >
+                Brisk
+              </button>
+              <span className="text-slate-500">|</span>
+              <span className="text-slate-400">Pose:</span>
+              <button
+                onClick={() => setFreezePose(null)}
+                className={`px-1.5 py-0.5 rounded ${freezePose === null ? 'bg-emerald-500 text-black font-bold' : 'text-slate-300'}`}
+              >
+                Live Walk
+              </button>
+              <button
+                onClick={() => setFreezePose('stride')}
+                className={`px-1.5 py-0.5 rounded ${freezePose === 'stride' ? 'bg-amber-400 text-black font-bold' : 'text-slate-300'}`}
+              >
+                Peak Stride
+              </button>
+            </div>
           )}
 
           <button
@@ -303,7 +645,9 @@ export const AssetDebugPage: React.FC = () => {
         camera={
           activeTab === 'city'
             ? { position: [60, 40, 70], fov: 50, near: 0.1, far: 1000 }
-            : { position: [0, 3.5, 12], fov: 45, near: 0.1, far: 500 }
+            : activeTab === 'characters'
+            ? { position: [0, 3.5, 12], fov: 45, near: 0.1, far: 500 }
+            : { position: [3.0, 1.05, 2.2], fov: 40, near: 0.1, far: 200 }
         }
         className="w-full h-full"
       >
@@ -313,26 +657,31 @@ export const AssetDebugPage: React.FC = () => {
         <directionalLight position={[-40, 30, -40]} intensity={0.6} color="#93c5fd" />
 
         {/* Ground grid & 3D coordinate axes */}
-        <gridHelper args={[200, 100, '#38bdf8', '#1e293b']} position={[0, -0.01, 0]} />
-        <axesHelper args={[ activeTab === 'city' ? 50 : 5 ]} />
+        <gridHelper
+          args={[activeTab === 'walk' ? 20 : 200, activeTab === 'walk' ? 20 : 100, '#38bdf8', '#1e293b']}
+          position={[0, -0.01, 0]}
+        />
+        <axesHelper args={[activeTab === 'city' ? 50 : activeTab === 'characters' ? 5 : 2]} />
 
-        {/* 2 m Human-Scale Reference Box */}
-        <group position={[activeTab === 'city' ? 0 : -14, 0, 0]}>
-          <mesh position={[0, 1.0, 0]}>
-            <boxGeometry args={[0.6, 2.0, 0.6]} />
-            <meshStandardMaterial
-              color="#f43f5e"
-              emissive="#e11d48"
-              emissiveIntensity={0.3}
-              roughness={0.4}
-            />
-          </mesh>
-          <Html position={[0, 2.3, 0]} center distanceFactor={15}>
-            <div className="bg-rose-950/90 border border-rose-500/80 rounded px-2 py-0.5 text-[10px] font-mono text-rose-200 font-bold whitespace-nowrap shadow-md">
-              2.0 m Human Reference Box
-            </div>
-          </Html>
-        </group>
+        {/* 2 m Human-Scale Reference Box (shown in Tab 1 and Tab 2) */}
+        {activeTab !== 'walk' && (
+          <group position={[activeTab === 'city' ? 0 : -14, 0, 0]}>
+            <mesh position={[0, 1.0, 0]}>
+              <boxGeometry args={[0.6, 2.0, 0.6]} />
+              <meshStandardMaterial
+                color="#f43f5e"
+                emissive="#e11d48"
+                emissiveIntensity={0.3}
+                roughness={0.4}
+              />
+            </mesh>
+            <Html position={[0, 2.3, 0]} center distanceFactor={15}>
+              <div className="bg-rose-950/90 border border-rose-500/80 rounded px-2 py-0.5 text-[10px] font-mono text-rose-200 font-bold whitespace-nowrap shadow-md">
+                2.0 m Human Reference Box
+              </div>
+            </Html>
+          </group>
+        )}
 
         {/* Main Content Render */}
         <Suspense
@@ -349,8 +698,16 @@ export const AssetDebugPage: React.FC = () => {
         >
           {activeTab === 'city' ? (
             <CityModelViewer wireframe={wireframe} grounded={grounded} modelUrl={cityUrl} />
-          ) : (
+          ) : activeTab === 'characters' ? (
             <CharactersRowViewer wireframe={wireframe} modelUrl={charUrl} />
+          ) : (
+            <SingleCharacterWalkViewer
+              modelUrl={charUrl}
+              wireframe={wireframe}
+              speed={walkSpeed}
+              strideAmp={strideAmp}
+              freezePose={freezePose}
+            />
           )}
         </Suspense>
 
@@ -358,6 +715,7 @@ export const AssetDebugPage: React.FC = () => {
           makeDefault
           enableDamping
           dampingFactor={0.08}
+          target={activeTab === 'walk' ? [0, 0.95, 0] : [0, 0, 0]}
           maxPolarAngle={Math.PI / 2 + 0.05}
         />
       </Canvas>
@@ -379,13 +737,13 @@ export const AssetDebugPage: React.FC = () => {
               </div>
             </div>
             <div>
-              <div className="text-slate-400">Storey Height & Scale:</div>
+              <div className="text-slate-400">Storey Height &amp; Scale:</div>
               <div className="text-amber-300">
                 Total Height: ~113.3 units across ~10-12 storeys (Needs scaling to ~3.5m / storey)
               </div>
             </div>
           </>
-        ) : (
+        ) : activeTab === 'characters' ? (
           <>
             <div>
               <div className="text-slate-400">Characters Stats:</div>
@@ -406,9 +764,30 @@ export const AssetDebugPage: React.FC = () => {
               </div>
             </div>
           </>
+        ) : (
+          <>
+            <div>
+              <div className="text-slate-400">Walk Cycle Calibration:</div>
+              <div className="text-emerald-400 font-bold">
+                Local X Axis Rotation on Thigh, Shin, Upper Arm &amp; Forearm
+              </div>
+            </div>
+            <div>
+              <div className="text-slate-400">Gait Coordination:</div>
+              <div className="text-cyan-300">
+                Arms &amp; Legs in Opposite Phase • Knee Backward Flexion Clamped • Spine Bob
+              </div>
+            </div>
+            <div>
+              <div className="text-slate-400">Proportional Height:</div>
+              <div className="text-amber-300 font-bold">
+                Calibrated to 1.75m Human Stature (Feet on Ground Plane Y=0)
+              </div>
+            </div>
+          </>
         )}
         <div className="text-[10px] text-slate-500">
-          Left-click: Orbit | Right-click: Pan | Scroll: Zoom | Keys 1 &amp; 2: Switch Tabs
+          Left-click: Orbit | Right-click: Pan | Scroll: Zoom | Keys 1, 2, 3: Switch Tabs
         </div>
       </footer>
     </div>
