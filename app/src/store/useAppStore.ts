@@ -22,6 +22,10 @@ export interface AppState {
   shadowsEnabled: boolean;
   activateLowPerformanceMode: () => void;
 
+  // Debug Mode (Sign slots and bounds visualization - Press D)
+  isDebugMode: boolean;
+  toggleDebugMode: () => void;
+
   // Guided Tour & Building State
   currentBuilding: number | null; // Currently focused or nearest building (0..4, or null)
   tourStep: number;               // Current tour step (0..4)
@@ -119,6 +123,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     get().showToast('Performance mode activated for smoother scrolling.');
     console.warn('Performance mode active: Shadows disabled and DPR set to 1 due to FPS drop.');
+  },
+
+  // Debug mode
+  isDebugMode: false,
+  toggleDebugMode: () => {
+    const nextDebug = !get().isDebugMode;
+    set({ isDebugMode: nextDebug });
+    get().showToast(
+      nextDebug
+        ? '🛠️ Debug Mode: ON — Visualizing Sign Slots & Bounds'
+        : '🛠️ Debug Mode: OFF'
+    );
   },
 
   // Tour & Buildings

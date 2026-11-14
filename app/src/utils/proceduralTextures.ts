@@ -215,7 +215,7 @@ export function createWarmWindowTexture(isStorefront = false) {
   return new THREE.CanvasTexture(c);
 }
 
-// 6. Procedural Store Signboard Texture
+// 6. Procedural Store Signboard Texture with Auto-Fitting & High Contrast
 const signTextureCache = new Map<string, THREE.CanvasTexture>();
 
 export function getStoreSignTexture(title: string, number: string): THREE.CanvasTexture {
@@ -226,21 +226,74 @@ export function getStoreSignTexture(title: string, number: string): THREE.Canvas
 
   const c = document.createElement('canvas');
   c.width = 1024;
-  c.height = 192;
+  c.height = 256;
   const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#1c2228';
-  ctx.fillRect(0, 0, 1024, 192);
-  ctx.strokeStyle = '#d97706';
-  ctx.lineWidth = 10;
-  ctx.strokeRect(10, 10, 1004, 172);
 
-  ctx.fillStyle = '#fbbf24';
-  ctx.font = "bold 64px 'Space Grotesk', sans-serif";
+  // Deep obsidian/onyx backing with subtle vignette
+  const grad = ctx.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, '#101726');
+  grad.addColorStop(0.5, '#070a10');
+  grad.addColorStop(1, '#0e1422');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1024, 256);
+
+  // Outer gold frame border
+  ctx.strokeStyle = '#b45309';
+  ctx.lineWidth = 12;
+  ctx.strokeRect(8, 8, 1008, 240);
+
+  // Inner bright gold accent pinstripe
+  ctx.strokeStyle = '#fbbf24';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(22, 22, 980, 212);
+
+  // Corner brass rivets/embellishments
+  const cornerRivets = [
+    [32, 32],
+    [992, 32],
+    [32, 224],
+    [992, 224],
+  ];
+  ctx.fillStyle = '#fde68a';
+  cornerRivets.forEach(([rx, ry]) => {
+    ctx.beginPath();
+    ctx.arc(rx, ry, 6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Auto-fit font calculation to ensure high legibility without clipping
+  const displayText = `${number}  •  ${title.toUpperCase()}`;
+  const maxTextWidth = 920;
+  let fontSize = 76;
+  ctx.font = `bold ${fontSize}px 'Space Grotesk', 'Inter', sans-serif`;
+  let textWidth = ctx.measureText(displayText).width;
+
+  while (textWidth > maxTextWidth && fontSize > 36) {
+    fontSize -= 2;
+    ctx.font = `bold ${fontSize}px 'Space Grotesk', 'Inter', sans-serif`;
+    textWidth = ctx.measureText(displayText).width;
+  }
+
+  // Draw drop shadow for crisp readability from street level
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 4;
+
+  ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`${number} • ${title}`, 512, 100);
+  ctx.fillText(displayText, 512, 128);
+
+  // Reset shadow
+  ctx.shadowColor = 'transparent';
 
   const texture = new THREE.CanvasTexture(c);
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = 16;
+  texture.needsUpdate = true;
+
   signTextureCache.set(key, texture);
   return texture;
 }

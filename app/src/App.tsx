@@ -15,6 +15,7 @@ import { Toast } from './components/Toast';
 export const App: React.FC = () => {
   const viewMode = useAppStore((s) => s.viewMode);
   const isGoldenEvening = useAppStore((s) => s.isGoldenEvening);
+  const isDebugMode = useAppStore((s) => s.isDebugMode);
 
   // Synchronize document body background with theme
   useEffect(() => {
@@ -25,6 +26,13 @@ export const App: React.FC = () => {
   // Global accessibility keyboard shortcuts
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const target = document.activeElement;
+      const isInput =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          (target as HTMLElement).isContentEditable);
+
       if (e.key === 'Escape') {
         const { isMobileMenuOpen, setIsMobileMenuOpen, focusedBuildingIndex, closeBuildingModal } =
           useAppStore.getState();
@@ -34,6 +42,9 @@ export const App: React.FC = () => {
         } else if (focusedBuildingIndex !== null) {
           closeBuildingModal(false);
         }
+      } else if ((e.key === 'd' || e.key === 'D') && !isInput) {
+        e.preventDefault();
+        useAppStore.getState().toggleDebugMode();
       }
     };
 
@@ -83,6 +94,18 @@ export const App: React.FC = () => {
       ) : (
         /* Accessible 2D Single-Page Layout */
         <ClassicView />
+      )}
+      {/* Debug Mode Overlap HUD Overlay */}
+      {isDebugMode && (
+        <div className="fixed bottom-4 left-4 z-50 glass-panel px-4 py-2.5 border border-amber-400/50 text-amber-300 font-mono text-xs flex items-center gap-3 shadow-2xl pointer-events-auto backdrop-blur-xl">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="font-bold tracking-wider text-white">DEBUG MODE (Press D)</span>
+          <span className="text-slate-300">
+            • <span className="text-emerald-400 font-semibold">Green: Sign Slot</span> •{' '}
+            <span className="text-cyan-400 font-semibold">Cyan: Awnings</span> •{' '}
+            <span className="text-amber-400 font-semibold">Amber: Facade</span>
+          </span>
+        </div>
       )}
     </div>
   );
