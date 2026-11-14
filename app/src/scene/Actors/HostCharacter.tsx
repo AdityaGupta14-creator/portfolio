@@ -609,7 +609,7 @@ export const HostCharacter: React.FC = () => {
       const b = PORTFOLIO_CONTENT.buildings[focusedBuildingIndex];
       targetPos.current.set(b.xPos - 2.4, 0.16, useOldCity ? -7.8 : -11.5);
     } else if (scrollProgress > 0.88) {
-      targetPos.current.set(-7, 0.10, 22.5);
+      targetPos.current.set(45, 0.10, 7.8);
     } else if (scrollProgress < 0.16) {
       targetPos.current.set(-48, 0.10, 7.8);
     } else {

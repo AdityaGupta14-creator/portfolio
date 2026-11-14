@@ -16,21 +16,21 @@ export const StreetProps: React.FC = () => {
   const treeCanopyRefs = useRef<(THREE.Group | null)[]>([]);
   const lanternMatRef = useRef<THREE.MeshBasicMaterial>(null);
 
-  // Materials for Trees
+  // Materials for Trees — Stylized, warm natural city park foliage
   const trunkMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: 0x6b472c, roughness: 0.9 }),
+    () => new THREE.MeshStandardMaterial({ color: 0x5a3d28, roughness: 0.9 }),
     []
   );
   const canopyMat1 = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: 0x77b352, roughness: 0.78 }),
+    () => new THREE.MeshStandardMaterial({ color: 0x426e38, roughness: 0.8 }),
     []
   );
   const canopyMat2 = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: 0x89c360, roughness: 0.75 }),
+    () => new THREE.MeshStandardMaterial({ color: 0x507f3f, roughness: 0.75 }),
     []
   );
   const canopyMat3 = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: 0x6aa346, roughness: 0.8 }),
+    () => new THREE.MeshStandardMaterial({ color: 0x385f30, roughness: 0.82 }),
     []
   );
 
@@ -50,46 +50,45 @@ export const StreetProps: React.FC = () => {
     for (let lx = -65; lx <= 65; lx += 26) {
       list.push([lx + 9, -6.8]);
     }
-    list.push([-28, 5.6]);
-    list.push([24, 5.6]);
+    list.push([-28, 6.8]);
+    list.push([24, 6.8]);
     return list;
   }, []);
 
   // Hydrant Positions
   const hydrantPositions = useMemo<[number, number][]>(() => [[-33, -6.8], [19, -6.8]], []);
 
-  // Bench Positions: [x, z, rotY]
+  // Bench Positions: [x, z, rotY] (Placed along south sidewalk facing street)
   const benchPositions = useMemo<[number, number, number][]>(
     () => [
-      [-36, 12.2, Math.PI],
-      [6, 12.2, Math.PI],
+      [-36, 7.2, 0],
+      [8, 7.2, 0],
     ],
     []
   );
 
-  // Tree Positions
+  // Sidewalk Street Tree Positions (slender urban sidewalk trees along south curb verge)
   const treeConfigs = useMemo<TreeData[]>(
     () => [
-      { x: -62, z: 15.2, scale: 1.25, phase: 0.2 },
-      { x: -18, z: 16.5, scale: 1.18, phase: 1.5 },
-      { x: 31, z: 14.8, scale: 1.26, phase: 2.8 },
-      { x: 72, z: 15.8, scale: 1.12, phase: 4.1 },
+      { x: -68, z: 7.2, scale: 1.0, phase: 0.2 },
+      { x: -22, z: 7.2, scale: 1.05, phase: 1.5 },
+      { x: 24, z: 7.2, scale: 0.95, phase: 2.8 },
+      { x: 68, z: 7.2, scale: 1.02, phase: 4.1 },
     ],
     []
   );
 
-  // Canopy Puff Offsets: [px, py, pz, radius, matIndex]
+  // Compact elevated canopy puff offsets: [px, py, pz, radius, mat]
+  // Elevated above eye level (Y = 4.8m - 7.5m) so they never clip street camera or block facades
   const canopyPuffs = useMemo<Array<[number, number, number, number, THREE.MeshStandardMaterial]>>(
     () => [
-      [0, 9.1, 0, 3.3, canopyMat2],
-      [-2.5, 7.8, 0.8, 2.6, canopyMat1],
-      [2.6, 7.7, 0.6, 2.7, canopyMat1],
-      [-1.7, 6.9, -1.5, 2.4, canopyMat3],
-      [1.9, 7.1, -1.4, 2.5, canopyMat1],
-      [0, 7.4, 2.1, 2.4, canopyMat2],
-      [-3.3, 6.5, -0.2, 2.0, canopyMat3],
-      [3.2, 6.4, -0.3, 2.1, canopyMat2],
-      [0.8, 8.6, -1.2, 2.5, canopyMat2],
+      [0, 6.2, 0, 1.8, canopyMat2],
+      [-1.1, 5.5, 0.5, 1.4, canopyMat1],
+      [1.2, 5.4, 0.4, 1.4, canopyMat1],
+      [-0.8, 5.1, -0.9, 1.3, canopyMat3],
+      [0.9, 5.2, -0.8, 1.3, canopyMat1],
+      [0, 5.3, 1.1, 1.3, canopyMat2],
+      [0.4, 6.6, -0.5, 1.4, canopyMat2],
     ],
     [canopyMat1, canopyMat2, canopyMat3]
   );
@@ -170,42 +169,38 @@ export const StreetProps: React.FC = () => {
         </group>
       ))}
 
-      {/* 4. Stylized Procedural Trees */}
+      {/* 4. Stylized Procedural Sidewalk Trees */}
       {treeConfigs.map((t, idx) => (
         <group key={idx} position={[t.x, 0, t.z]} scale={t.scale}>
-          {/* Trunk */}
-          <mesh position={[0, 3.2, 0]} material={trunkMat} castShadow receiveShadow>
-            <cylinderGeometry args={[0.62, 1.35, 6.4, 12]} />
+          {/* Sidewalk Tree Pit Cast-Iron Grate */}
+          <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]} material={materials.ironBlack}>
+            <ringGeometry args={[0.32, 1.05, 16]} />
           </mesh>
 
-          {/* Root Flares */}
-          {[0, 1, 2, 3, 4].map((r) => {
-            const angle = (r / 5) * Math.PI * 2;
-            return (
-              <mesh
-                key={r}
-                position={[Math.cos(angle) * 0.85, 0.75, Math.sin(angle) * 0.85]}
-                rotation={[Math.sin(angle) * 0.45, 0, Math.cos(angle) * -0.45]}
-                material={trunkMat}
-              >
-                <coneGeometry args={[0.38, 1.8, 8]} />
-              </mesh>
-            );
-          })}
+          {/* Soft Tree Contact Shadow */}
+          <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[0.1, 2.2, 24]} />
+            <meshBasicMaterial color="#000000" transparent opacity={0.28} depthWrite={false} />
+          </mesh>
 
-          {/* Branches */}
-          {[0, 1, 2, 3].map((b) => (
+          {/* Slender Urban Trunk */}
+          <mesh position={[0, 2.5, 0]} material={trunkMat} castShadow receiveShadow>
+            <cylinderGeometry args={[0.2, 0.32, 5.0, 10]} />
+          </mesh>
+
+          {/* Upper Crown Branches */}
+          {[-0.35, 0.35].map((bx, bIdx) => (
             <mesh
-              key={b}
-              position={[(b - 1.5) * 0.75, 5.6, b % 2 === 0 ? 0.45 : -0.45]}
-              rotation={[0, 0, (b - 1.5) * -0.38]}
+              key={bIdx}
+              position={[bx, 4.8, bIdx === 0 ? 0.25 : -0.25]}
+              rotation={[0, 0, bx * -0.45]}
               material={trunkMat}
             >
-              <cylinderGeometry args={[0.24, 0.44, 3.5, 8]} />
+              <cylinderGeometry args={[0.14, 0.22, 1.8, 8]} />
             </mesh>
           ))}
 
-          {/* Wind-Swaying Canopy */}
+          {/* Wind-Swaying Elevated Canopy */}
           <group
             ref={(el) => {
               treeCanopyRefs.current[idx] = el;
@@ -213,7 +208,7 @@ export const StreetProps: React.FC = () => {
           >
             {canopyPuffs.map(([px, py, pz, r, mat], pIdx) => (
               <mesh key={pIdx} position={[px, py, pz]} material={mat} castShadow receiveShadow>
-                <sphereGeometry args={[r, 20, 20]} />
+                <sphereGeometry args={[r, 16, 16]} />
               </mesh>
             ))}
           </group>

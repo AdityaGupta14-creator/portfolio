@@ -16,7 +16,7 @@ export const StreetGround: React.FC = () => {
   const crosswalks = useMemo(() => {
     const crosswalkX = [-39, 13, 65];
     const stripesZ: number[] = [];
-    for (let z = -5.6; z <= 3.8; z += 1.15) {
+    for (let z = -4.8; z <= 4.8; z += 1.15) {
       stripesZ.push(z);
     }
     return { crosswalkX, stripesZ };
@@ -27,66 +27,57 @@ export const StreetGround: React.FC = () => {
   const stripeGeom = useMemo(() => new THREE.PlaneGeometry(2.8, 0.55), []);
 
   return (
-    <group>
-      {/* 1. Base Meadow Infinite Ground */}
+    <group name="StreetGround">
+      {/* 1. Base Dark Foundation Ground (Replaced old olive-green meadow) */}
       <mesh
         geometry={planeGroundGeom}
-        material={new THREE.MeshStandardMaterial({ color: 0x8eb939, roughness: 1.0 })}
+        material={new THREE.MeshStandardMaterial({ color: 0x24272c, roughness: 0.95 })}
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, -0.5, 0]}
         receiveShadow
       />
 
-      {/* 2. Foreground Park Lawn */}
+      {/* 2. South Sidewalk (Under south brownstone row Z = +6.0 to +22.0) */}
       <mesh
-        position={[0, -0.08, 24.5]}
-        material={materials.grass}
-        receiveShadow
-      >
-        <boxGeometry args={[290, 0.65, 28]} />
-      </mesh>
-
-      {/* 3. Cobblestone Promenade / Front Sidewalk */}
-      <mesh
-        position={[0, -0.14, 9.2]}
+        position={[0, -0.08, 14.0]}
         material={materials.sidewalk}
         receiveShadow
       >
-        <boxGeometry args={[290, 0.48, 8.2]} />
+        <boxGeometry args={[290, 0.40, 16.0]} />
       </mesh>
 
-      {/* 4. Front Concrete Curb */}
+      {/* 3. South Concrete Curb */}
       <mesh
-        position={[0, -0.1, 5.1]}
+        position={[0, -0.06, 5.75]}
         material={materials.curb}
         receiveShadow
       >
-        <boxGeometry args={[290, 0.54, 0.45]} />
+        <boxGeometry args={[290, 0.44, 0.35]} />
       </mesh>
 
-      {/* 5. Asphalt Street Roadway */}
+      {/* 4. Asphalt Street Roadway (Centered at Z = 0) */}
       <mesh
-        position={[0, -0.25, -0.8]}
+        position={[0, -0.22, 0.0]}
         material={materials.asphalt}
         receiveShadow
       >
-        <boxGeometry args={[290, 0.3, 11.8]} />
+        <boxGeometry args={[290, 0.3, 11.2]} />
       </mesh>
 
-      {/* 6. Center Dashed Lane Markings */}
+      {/* 5. Center Dashed Lane Markings */}
       {dashPositions.map((x) => (
         <mesh
           key={x}
           geometry={dashGeom}
           material={materials.dashLine}
           rotation={[-Math.PI / 2, 0, 0]}
-          position={[x, -0.08, -0.8]}
+          position={[x, -0.06, 0.0]}
         />
       ))}
 
-      {/* 7. Zebra Crosswalks */}
+      {/* 6. Zebra Crosswalks */}
       {crosswalks.crosswalkX.map((cx) => (
-        <group key={cx} position={[cx, -0.07, 0]}>
+        <group key={cx} position={[cx, -0.05, 0]}>
           {crosswalks.stripesZ.map((z) => (
             <mesh
               key={z}
@@ -99,22 +90,22 @@ export const StreetGround: React.FC = () => {
         </group>
       ))}
 
-      {/* 8. Rear Sidewalk (Brownstone Frontage) */}
+      {/* 7. North Sidewalk (Under north brownstone row Z = -6.0 to -22.0) */}
       <mesh
-        position={[0, -0.1, -9.8]}
+        position={[0, -0.08, -14.0]}
         material={materials.sidewalk}
         receiveShadow
       >
-        <boxGeometry args={[290, 0.52, 7.2]} />
+        <boxGeometry args={[290, 0.40, 16.0]} />
       </mesh>
 
-      {/* 9. Rear Concrete Curb */}
+      {/* 8. North Concrete Curb */}
       <mesh
-        position={[0, -0.08, -6.3]}
+        position={[0, -0.06, -5.75]}
         material={materials.curb}
         receiveShadow
       >
-        <boxGeometry args={[290, 0.56, 0.45]} />
+        <boxGeometry args={[290, 0.44, 0.35]} />
       </mesh>
     </group>
   );
