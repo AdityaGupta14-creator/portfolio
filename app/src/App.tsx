@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppStore } from './store/useAppStore';
 import { CityCanvas } from './scene/CityCanvas';
 import { ScrollTrack } from './components/ScrollTrack';
@@ -11,11 +11,38 @@ import { DestinationHub } from './components/DestinationHub';
 import { BuildingDrawer } from './components/BuildingDrawer';
 import { ClassicView } from './components/ClassicView';
 import { Toast } from './components/Toast';
+import { AssetDebugPage } from './components/AssetDebugPage';
 
 export const App: React.FC = () => {
   const viewMode = useAppStore((s) => s.viewMode);
   const isGoldenEvening = useAppStore((s) => s.isGoldenEvening);
   const isDebugMode = useAppStore((s) => s.isDebugMode);
+
+  // Check for /debug/assets route or query parameter (?debug=assets or #/debug/assets)
+  const [isDebugRoute, setIsDebugRoute] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      window.location.pathname.startsWith('/debug/assets') ||
+      window.location.search.includes('debug=assets') ||
+      window.location.hash.includes('/debug/assets')
+    );
+  });
+
+  useEffect(() => {
+    const checkRoute = () => {
+      setIsDebugRoute(
+        window.location.pathname.startsWith('/debug/assets') ||
+          window.location.search.includes('debug=assets') ||
+          window.location.hash.includes('/debug/assets')
+      );
+    };
+    window.addEventListener('popstate', checkRoute);
+    window.addEventListener('hashchange', checkRoute);
+    return () => {
+      window.removeEventListener('popstate', checkRoute);
+      window.removeEventListener('hashchange', checkRoute);
+    };
+  }, []);
 
   // Synchronize document body background with theme
   useEffect(() => {
@@ -56,6 +83,11 @@ export const App: React.FC = () => {
   useEffect(() => {
     document.body.style.overflowY = 'auto';
   }, [viewMode]);
+
+  // Render developer asset test route
+  if (isDebugRoute) {
+    return <AssetDebugPage />;
+  }
 
   return (
     <div className="relative min-h-screen">
@@ -105,6 +137,12 @@ export const App: React.FC = () => {
             <span className="text-cyan-400 font-semibold">Cyan: Awnings</span> •{' '}
             <span className="text-amber-400 font-semibold">Amber: Facade</span>
           </span>
+          <a
+            href="/debug/assets"
+            className="ml-2 px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-semibold transition-colors"
+          >
+            Open /debug/assets ↗
+          </a>
         </div>
       )}
     </div>
