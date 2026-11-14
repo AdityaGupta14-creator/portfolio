@@ -36,7 +36,7 @@ const THEME_PRESETS = {
     skyZenith: new THREE.Color(0x7ebbdb),     // soft blue
     fog: new THREE.Color(0xdfc9d8),           // soft peach-lilac fog
     hemiSky: new THREE.Color(0xf3f8ff),
-    hemiGround: new THREE.Color(0x5a5560),
+    hemiGround: new THREE.Color(0x6e6863),
     ambient: new THREE.Color(0xfff6ec),
     sun: new THREE.Color(0xfff1d6),
     sunIntensity: 1.4,
@@ -47,8 +47,8 @@ const THEME_PRESETS = {
     skyHorizon: new THREE.Color(0xe8c8be),    // warm soft peach-lilac horizon
     skyZenith: new THREE.Color(0x384a68),     // soft twilight blue
     fog: new THREE.Color(0xdfc9d8),           // soft peach-lilac fog (no maroon)
-    hemiSky: new THREE.Color(0x7c94b4),       // soft dusk sky fill
-    hemiGround: new THREE.Color(0x5a5560),    // neutral warm ground reflection
+    hemiSky: new THREE.Color(0x88a2bf),       // soft dusk sky fill
+    hemiGround: new THREE.Color(0x6c645e),    // neutral warm ground reflection
     ambient: new THREE.Color(0xffeccd),       // warm peach-cream ambient (not red)
     sun: new THREE.Color(0xffd5ad),           // warm moderate orange-peach sun (not red)
     sunIntensity: 1.35,
@@ -242,6 +242,13 @@ export const SkyAndAtmosphere: React.FC = () => {
         shadow-camera-top={120}
         shadow-camera-bottom={-120}
         shadow-bias={-0.0005}
+      />
+
+      {/* Balanced Fill Directional Light: Ensures even street lighting across both facing rows */}
+      <directionalLight
+        position={[-60, 50, -45]}
+        intensity={0.65}
+        color={0xffeedb}
       />
 
       {/* Sun Mesh & Additive Corona Halo */}

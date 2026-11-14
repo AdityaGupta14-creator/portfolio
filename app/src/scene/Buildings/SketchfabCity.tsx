@@ -6,6 +6,7 @@ import { CITY_CONFIG } from '../../config/cityConfig';
 import { BUILDING_PROXIES, BuildingProxyDef } from '../../data/buildings';
 import { DistantSkyline } from '../Environment/DistantSkyline';
 import { useAppStore } from '../../store/useAppStore';
+import { materials } from '../../utils/proceduralTextures';
 
 // Preload optimized city model with MeshoptDecoder
 useGLTF.preload('/models/city.opt.glb', true, true, (loader) => {
@@ -71,14 +72,14 @@ export const SketchfabCity: React.FC = () => {
     const list: BuildingInstanceConfig[] = [];
 
     // ── 1. North Row: Main Interactive Street Facades (Z = -19.2) ───────────
-    // Filler left buildings
+    // Filler left buildings with varied height (0.95x-1.05x), width, and mirroring
     list.push({
       id: 'north-filler-left-2',
       variant: 1,
       position: [-98, 0, CITY_CONFIG.NORTH_ROW_Z],
       rotationY: 0,
-      scaleX: -CITY_CONFIG.SCALE, // Mirrored horizontally
-      scaleY: CITY_CONFIG.SCALE * 1.04,
+      scaleX: -CITY_CONFIG.SCALE * 1.02, // Mirrored
+      scaleY: CITY_CONFIG.SCALE * 1.03,
       scaleZ: CITY_CONFIG.SCALE,
       tintColor: '#f8f8f8',
     });
@@ -87,22 +88,32 @@ export const SketchfabCity: React.FC = () => {
       variant: 2,
       position: [-74, 0, CITY_CONFIG.NORTH_ROW_Z],
       rotationY: 0,
-      scaleX: CITY_CONFIG.SCALE,
-      scaleY: CITY_CONFIG.SCALE * 0.98,
+      scaleX: CITY_CONFIG.SCALE * 0.98,
+      scaleY: CITY_CONFIG.SCALE * 0.96,
       scaleZ: CITY_CONFIG.SCALE,
       tintColor: '#ffffff',
     });
 
     // 5 Core Interactive Facades mapped to BUILDING_PROXIES (natural brick, subtle ±5-8% brightness)
+    // Varied heights (0.95x - 1.05x), widths (0.96x - 1.05x), and alternating horizontal mirroring
+    const northConfigs = [
+      { heightMult: 0.98, widthMult: 1.04, mirror: 1 },
+      { heightMult: 1.04, widthMult: 0.97, mirror: -1 },
+      { heightMult: 0.96, widthMult: 1.03, mirror: 1 },
+      { heightMult: 1.03, widthMult: 0.98, mirror: -1 },
+      { heightMult: 0.97, widthMult: 1.04, mirror: 1 },
+    ];
     const tints = ['#ffffff', '#fafafa', '#f6f6f6', '#f8f8f8', '#f2f2f2'];
+
     BUILDING_PROXIES.forEach((proxy, idx) => {
+      const cfg = northConfigs[idx];
       list.push({
         id: `interactive-${proxy.id}`,
         variant: proxy.facadeVariant,
         position: [proxy.xPos, 0, CITY_CONFIG.NORTH_ROW_Z],
         rotationY: 0,
-        scaleX: idx % 2 === 1 ? -CITY_CONFIG.SCALE : CITY_CONFIG.SCALE,
-        scaleY: CITY_CONFIG.SCALE * (1.0 + (idx % 3) * 0.03),
+        scaleX: CITY_CONFIG.SCALE * cfg.widthMult * cfg.mirror,
+        scaleY: CITY_CONFIG.SCALE * cfg.heightMult,
         scaleZ: CITY_CONFIG.SCALE,
         tintColor: tints[idx],
         proxy,
@@ -112,41 +123,42 @@ export const SketchfabCity: React.FC = () => {
     // Filler right buildings
     list.push({
       id: 'north-filler-right-1',
-      variant: 1,
+      variant: 2,
       position: [74, 0, CITY_CONFIG.NORTH_ROW_Z],
       rotationY: 0,
-      scaleX: CITY_CONFIG.SCALE,
-      scaleY: CITY_CONFIG.SCALE * 1.02,
+      scaleX: -CITY_CONFIG.SCALE * 0.98, // Mirrored
+      scaleY: CITY_CONFIG.SCALE * 1.04,
       scaleZ: CITY_CONFIG.SCALE,
       tintColor: '#f7f7f7',
     });
     list.push({
       id: 'north-filler-right-2',
-      variant: 2,
+      variant: 1,
       position: [98, 0, CITY_CONFIG.NORTH_ROW_Z],
       rotationY: 0,
-      scaleX: -CITY_CONFIG.SCALE,
-      scaleY: CITY_CONFIG.SCALE * 0.96,
+      scaleX: CITY_CONFIG.SCALE * 1.02,
+      scaleY: CITY_CONFIG.SCALE * 0.95,
       scaleZ: CITY_CONFIG.SCALE,
       tintColor: '#f4f4f4',
     });
 
     // ── 2. South Row: Facing Buildings (Z = +19.2, rotated 180° into street) ─
     const southXCoords = [-96, -72, -48, -24, 0, 24, 48, 72, 96];
+    const southHeights = [0.96, 1.04, 0.97, 1.03, 0.95, 1.04, 0.98, 1.02, 0.96];
+    const southWidths = [1.03, 0.97, 1.04, 0.98, 1.03, 0.97, 1.04, 0.98, 1.02];
     const southTints = ['#ffffff', '#fafafa', '#f7f7f7', '#fdfdfd', '#f5f5f5', '#f8f8f8', '#fcfcfc', '#f6f6f6', '#f9f9f9'];
 
     southXCoords.forEach((x, i) => {
       const variant: 1 | 2 = i % 2 === 0 ? 1 : 2;
-      const heightVar = 0.94 + ((i * 7) % 15) * 0.01;
-      const mirror = i % 3 === 0 ? -1 : 1;
+      const mirror = i % 2 === 0 ? 1 : -1;
 
       list.push({
         id: `south-${i}`,
         variant,
         position: [x, 0, CITY_CONFIG.SOUTH_ROW_Z],
         rotationY: Math.PI, // Facing into the street
-        scaleX: CITY_CONFIG.SCALE * mirror,
-        scaleY: CITY_CONFIG.SCALE * heightVar,
+        scaleX: CITY_CONFIG.SCALE * southWidths[i] * mirror,
+        scaleY: CITY_CONFIG.SCALE * southHeights[i],
         scaleZ: CITY_CONFIG.SCALE,
         tintColor: southTints[i % southTints.length],
       });
@@ -219,6 +231,31 @@ export const SketchfabCity: React.FC = () => {
           </group>
         );
       })}
+
+      {/* 2b. Setback Connector Walls: Cover blank dark side walls between buildings so interior voids are never visible */}
+      {/* North Row Party Walls (between adjacent buildings) */}
+      {[-86, -63, -39, -13, 13, 39, 63, 86].map((mx) => (
+        <group key={`north-setback-${mx}`} position={[mx, 0, CITY_CONFIG.NORTH_ROW_Z - 1.2]}>
+          <mesh position={[0, 11.8, 0]} material={materials.brickBrown} receiveShadow castShadow>
+            <boxGeometry args={[6.4, 23.6, 8.0]} />
+          </mesh>
+          <mesh position={[0, 23.7, 0]} material={materials.creamStone}>
+            <boxGeometry args={[6.6, 0.5, 8.3]} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* South Row Party Walls (between adjacent facing buildings) */}
+      {[-84, -60, -36, -12, 12, 36, 60, 84].map((mx) => (
+        <group key={`south-setback-${mx}`} position={[mx, 0, CITY_CONFIG.SOUTH_ROW_Z + 1.2]}>
+          <mesh position={[0, 11.8, 0]} material={materials.brickBrown} receiveShadow castShadow>
+            <boxGeometry args={[6.4, 23.6, 8.0]} />
+          </mesh>
+          <mesh position={[0, 23.7, 0]} material={materials.creamStone}>
+            <boxGeometry args={[6.6, 0.5, 8.3]} />
+          </mesh>
+        </group>
+      ))}
 
       {/* 3. 5 Invisible Click-Proxy Boxes with Hover Glow & Floating Street Labels */}
       {BUILDING_PROXIES.map((proxy) => {
