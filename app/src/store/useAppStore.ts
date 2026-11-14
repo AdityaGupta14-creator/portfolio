@@ -1,10 +1,16 @@
 import { create } from 'zustand';
 import { PORTFOLIO_CONTENT } from '../data/content';
+import { FLAGS } from '../config/flags';
 
 export type ThemeMode = 'day' | 'goldenEvening';
 export type ViewMode = '3d' | 'classic';
 
 export interface AppState {
+  // Flag to switch between legacy procedural city and new GLB assets
+  useOldCity: boolean;
+  setUseOldCity: (useOld: boolean) => void;
+  toggleUseOldCity: () => void;
+
   // Theme & Atmosphere
   theme: ThemeMode;
   isGoldenEvening: boolean;
@@ -83,6 +89,15 @@ const getInitialDpr = (): number => {
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
+  // City asset toggle (USE_OLD_CITY safety flag)
+  useOldCity: FLAGS.USE_OLD_CITY,
+  setUseOldCity: (useOldCity) => set({ useOldCity }),
+  toggleUseOldCity: () => {
+    const next = !get().useOldCity;
+    set({ useOldCity: next });
+    get().showToast(next ? 'Switched to Procedural Brownstone City' : 'Switched to Sketchfab City Models');
+  },
+
   // Theme state
   theme: 'day',
   isGoldenEvening: false,
