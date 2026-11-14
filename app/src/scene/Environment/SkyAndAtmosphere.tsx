@@ -41,7 +41,7 @@ const THEME_PRESETS = {
     sun: new THREE.Color(0xfff1d6),
     sunIntensity: 1.4,
     windowGlow: 0.0,
-    cloudTint: new THREE.Color(0xfff5ee),     // soft off-white clouds
+    cloudTint: new THREE.Color(0xfff8f2),     // soft off-white clouds
   },
   goldenEvening: {
     skyHorizon: new THREE.Color(0xe8c8be),    // warm soft peach-lilac horizon
@@ -53,7 +53,7 @@ const THEME_PRESETS = {
     sun: new THREE.Color(0xffd5ad),           // warm moderate orange-peach sun (not red)
     sunIntensity: 1.35,
     windowGlow: 1.0,
-    cloudTint: new THREE.Color(0xfff0e4),     // soft off-white/peach clouds
+    cloudTint: new THREE.Color(0xffebd8),     // soft warm peach clouds (no red)
   },
 };
 
@@ -108,27 +108,22 @@ export const SkyAndAtmosphere: React.FC = () => {
     };
 
     const cloudData: CloudInstance[] = [];
-    for (let i = 0; i < 24; i++) {
-      let cx = -120 + rnd() * 240;
-      if (Math.abs(cx) < 45) cx += Math.sign(cx) * 45;
-      let cy = 35 + rnd() * 50;
-      if (cy > 55 && cy < 75) cy += 20;
-      const cz = -38 + (rnd() - 0.5) * 60;
-      const scale = 0.85 + rnd() * 1.25;
+    for (let i = 0; i < 14; i++) {
+      let cx = -130 + rnd() * 260;
+      if (Math.abs(cx) < 35) cx += Math.sign(cx || 1) * 45;
+      const cy = 48 + rnd() * 42;
+      const cz = -45 + (rnd() - 0.5) * 50;
+      const scale = 1.0 + rnd() * 1.4;
 
       const puffs = [];
-      for (let j = 0; j < 6; j++) {
+      for (let j = 0; j < 5; j++) {
+        const spreadX = (rnd() - 0.5) * 5.0;
+        const spreadY = (rnd() - 0.5) * 0.8;
+        const spreadZ = (rnd() - 0.5) * 2.0;
+        const baseRadius = 2.0 + rnd() * 2.2;
         puffs.push({
-          pos: [
-            (rnd() - 0.5) * 3.5,
-            (rnd() - 0.5) * 1.5,
-            (rnd() - 0.5) * 2.5,
-          ] as [number, number, number],
-          scale: [
-            1.5 + rnd() * 2.5,
-            (1.5 + rnd() * 2.5) * 0.6,
-            1.5 + rnd() * 2.5,
-          ] as [number, number, number],
+          pos: [spreadX, spreadY, spreadZ] as [number, number, number],
+          scale: [baseRadius * 1.3, baseRadius * 0.35, baseRadius * 0.75] as [number, number, number],
         });
       }
 
@@ -136,7 +131,7 @@ export const SkyAndAtmosphere: React.FC = () => {
         id: i,
         initialPos: [cx, cy, cz],
         scale,
-        speed: 0.015 + rnd() * 0.02,
+        speed: 0.012 + rnd() * 0.018,
         puffs,
       });
     }
@@ -145,7 +140,15 @@ export const SkyAndAtmosphere: React.FC = () => {
 
   const puffGeom = useMemo(() => new THREE.SphereGeometry(1, 16, 16), []);
   const cloudMat = useMemo(
-    () => new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }),
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: 0xfff8f2,
+        roughness: 0.95,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false,
+      }),
     []
   );
 
