@@ -8,12 +8,11 @@ export const PerformanceManager: React.FC = () => {
   const shadowsEnabled = useAppStore((s) => s.shadowsEnabled);
   const isLowPerformanceMode = useAppStore((s) => s.isLowPerformanceMode);
   const activateLowPerformanceMode = useAppStore((s) => s.activateLowPerformanceMode);
-  const scrollProgress = useAppStore((s) => s.scrollProgress);
+  const isLoading = useAppStore((s) => s.isLoading);
 
+  const loadEndTimeRef = useRef<number | null>(null);
+  const windowStartTime = useRef<number | null>(null);
   const frameCount = useRef(0);
-  const lastTime = useRef(performance.now());
-  const startTime = useRef(performance.now());
-  const lowFpsSamples = useRef(0);
 
   // Keep renderer DPR & shadow map in sync with store
   useEffect(() => {
@@ -27,30 +26,52 @@ export const PerformanceManager: React.FC = () => {
 
     const now = performance.now();
 
-    // Warm-up grace period (3.5 seconds) to allow shader compilation
-    if (now - startTime.current < 3500) {
-      lastTime.current = now;
+    // 1. Hold timer while scene is still loading assets
+    if (isLoading) {
+      loadEndTimeRef.current = null;
+      windowStartTime.current = null;
       frameCount.current = 0;
       return;
     }
 
-    frameCount.current++;
-    const elapsed = now - lastTime.current;
+    // Set load finish timestamp upon completion of loading screen
+    if (loadEndTimeRef.current === null) {
+      loadEndTimeRef.current = now;
+      console.log('[PerformanceManager] Scene load finished. Starting 3-second grace period...');
+      return;
+    }
 
-    if (elapsed >= 1000) {
-      const fps = (frameCount.current * 1000) / elapsed;
+    // 2. 3-second grace period after load to allow shader compilation and texture uploads
+    if (now - loadEndTimeRef.current < 3000) {
+      windowStartTime.current = now;
       frameCount.current = 0;
-      lastTime.current = now;
+      return;
+    }
 
-      // Auto-scale if FPS drops below 40 for 2 consecutive seconds while actively scrolling
-      if (fps < 40 && scrollProgress > 0.08) {
-        lowFpsSamples.current++;
-        if (lowFpsSamples.current >= 2) {
-          activateLowPerformanceMode();
-        }
-      } else {
-        lowFpsSamples.current = 0;
+    // Initialize 2-second moving average window
+    if (windowStartTime.current === null) {
+      windowStartTime.current = now;
+      frameCount.current = 0;
+      return;
+    }
+
+    // 3. Accumulate frames over 2-second window
+    frameCount.current++;
+    const windowElapsed = now - windowStartTime.current;
+
+    if (windowElapsed >= 2000) {
+      const avgFps = (frameCount.current * 1000) / windowElapsed;
+      console.log(`[PerformanceManager] Measured FPS (2s average): ${avgFps.toFixed(1)}`);
+
+      // Only drop quality if the 2-second average is strictly below 30 FPS
+      if (avgFps < 30) {
+        console.warn(`[PerformanceManager] Average FPS (${avgFps.toFixed(1)}) fell below 30 FPS threshold. Dropping quality to low performance mode.`);
+        activateLowPerformanceMode();
       }
+
+      // Reset for next 2-second sampling window
+      frameCount.current = 0;
+      windowStartTime.current = now;
     }
   });
 
