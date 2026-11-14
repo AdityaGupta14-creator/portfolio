@@ -4,6 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import { SkyAndAtmosphere } from './Environment/SkyAndAtmosphere';
 import { StreetGround } from './Environment/StreetGround';
 import { BrownstoneRow } from './Buildings/BrownstoneRow';
+import { SketchfabCity } from './Buildings/SketchfabCity';
 import { StreetProps } from './Props/StreetProps';
 import { BuildingPins } from './Props/BuildingPins';
 import { TrafficGroup } from './Actors/TrafficGroup';
@@ -14,6 +15,7 @@ import { PORTFOLIO_CONTENT } from '../data/content';
 
 export const CityScene: React.FC = () => {
   const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
+  const useOldCity = useAppStore((s) => s.useOldCity);
   const spotlightRef = useRef<THREE.SpotLight>(null);
   const spotlightTargetRef = useRef<THREE.Object3D>(null);
 
@@ -42,11 +44,16 @@ export const CityScene: React.FC = () => {
       {/* 3. Street Props: Vintage Streetlamps, Hydrants, Benches, and Swaying Trees */}
       <StreetProps />
 
-      {/* 4. Brownstone Row Houses (9 buildings: 5 interactive + 4 filler) */}
-      <BrownstoneRow />
-
-      {/* 5. Floating 3D Building Pins on Roofs */}
-      <BuildingPins />
+      {/* 4. Buildings: New Sketchfab City vs. Legacy Brownstone Row (USE_OLD_CITY switch) */}
+      {useOldCity ? (
+        <>
+          <BrownstoneRow />
+          {/* Floating 3D Building Pins on Roofs (legacy) */}
+          <BuildingPins />
+        </>
+      ) : (
+        <SketchfabCity />
+      )}
 
       {/* 6. Traffic Simulation: 12 Moving Cars/Cabs with Spinning Wheels & Lights */}
       <TrafficGroup />

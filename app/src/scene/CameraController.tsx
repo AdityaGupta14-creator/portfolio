@@ -33,8 +33,8 @@ export const CameraController: React.FC = () => {
   const targetCamPos = useRef(new THREE.Vector3(0, 64, 30));
   const targetLookAt = useRef(new THREE.Vector3(0, 62, -30));
 
-  const introCameraPanY = useRef(80);
-  const introCameraPanZ = useRef(40);
+  const introCameraPanY = useRef(scrollProgress > 0 || focusedBuildingIndex !== null ? 0 : 80);
+  const introCameraPanZ = useRef(scrollProgress > 0 || focusedBuildingIndex !== null ? 0 : 40);
   const mouseParallaxX = useRef(0);
   const mouseParallaxY = useRef(0);
   const lastFocusScrollProgress = useRef(0);
@@ -100,9 +100,14 @@ export const CameraController: React.FC = () => {
     desiredPos.y += -mouseParallaxY.current * 0.45 + introCameraPanY.current;
     desiredPos.z += introCameraPanZ.current;
 
-    // Smooth soft camera lerp
-    currentCamPos.current.lerp(desiredPos, 0.035);
-    currentLookAt.current.lerp(targetLookAt.current, 0.04);
+    // Direct snap on deep-link / initial non-zero scroll progress, smooth lerp thereafter
+    if (introCameraPanY.current === 0 && (scrollProgress > 0 || focusedBuildingIndex !== null)) {
+      currentCamPos.current.lerp(desiredPos, 0.25);
+      currentLookAt.current.lerp(targetLookAt.current, 0.25);
+    } else {
+      currentCamPos.current.lerp(desiredPos, 0.035);
+      currentLookAt.current.lerp(targetLookAt.current, 0.04);
+    }
 
     camera.position.copy(currentCamPos.current);
     camera.lookAt(currentLookAt.current);

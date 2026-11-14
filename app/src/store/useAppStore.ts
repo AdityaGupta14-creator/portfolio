@@ -88,6 +88,36 @@ const getInitialDpr = (): number => {
   return Math.min(window.devicePixelRatio || 1, 2);
 };
 
+const getInitialScrollProgress = (): number => {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('p')) {
+      const val = parseFloat(params.get('p') || '0');
+      if (!isNaN(val)) return Math.max(0, Math.min(1, val));
+    }
+  }
+  return 0;
+};
+
+const getInitialFocusedBuilding = (): number | null => {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('focus')) {
+      const val = parseInt(params.get('focus') || '-1', 10);
+      if (val >= 0 && val < 5) return val;
+    }
+  }
+  return null;
+};
+
+const getInitialIsLoading = (): boolean => {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('noloading')) return false;
+  }
+  return true;
+};
+
 export const useAppStore = create<AppState>((set, get) => ({
   // City asset toggle (USE_OLD_CITY safety flag)
   useOldCity: FLAGS.USE_OLD_CITY,
@@ -153,9 +183,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // Tour & Buildings
-  currentBuilding: null,
-  tourStep: 0,
-  focusedBuildingIndex: null,
+  currentBuilding: getInitialFocusedBuilding(),
+  tourStep: getInitialFocusedBuilding() ?? 0,
+  focusedBuildingIndex: getInitialFocusedBuilding(),
   focusBuilding: (index: number) => {
     set({
       currentBuilding: index,
@@ -186,7 +216,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSelectedProjectId: (selectedProjectId) => set({ selectedProjectId }),
 
   // Scroll Progress
-  scrollProgress: 0,
+  scrollProgress: getInitialScrollProgress(),
   setScrollProgress: (scrollProgress) => {
     let currentStep = 0;
     if (scrollProgress >= 0.22 && scrollProgress <= 0.90) {
@@ -204,8 +234,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // Loading
-  isLoading: true,
-  loadProgress: 0,
+  isLoading: getInitialIsLoading(),
+  loadProgress: getInitialIsLoading() ? 0 : 100,
   setIsLoading: (isLoading) => set({ isLoading }),
   setLoadProgress: (loadProgress) => set({ loadProgress }),
 

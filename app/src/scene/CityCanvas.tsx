@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CityScene } from './CityScene';
@@ -29,7 +29,9 @@ export const CityCanvas: React.FC = () => {
       >
         <PerformanceManager />
         <CameraController />
-        <CityScene />
+        <Suspense fallback={null}>
+          <CityScene />
+        </Suspense>
       </Canvas>
     </div>
   );

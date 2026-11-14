@@ -132,11 +132,12 @@ export const App: React.FC = () => {
         <div className="fixed bottom-4 left-4 z-50 glass-panel px-4 py-2.5 border border-amber-400/50 text-amber-300 font-mono text-xs flex items-center gap-3 shadow-2xl pointer-events-auto backdrop-blur-xl">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="font-bold tracking-wider text-white">DEBUG MODE (Press D)</span>
-          <span className="text-slate-300">
-            • <span className="text-emerald-400 font-semibold">Green: Sign Slot</span> •{' '}
-            <span className="text-cyan-400 font-semibold">Cyan: Awnings</span> •{' '}
-            <span className="text-amber-400 font-semibold">Amber: Facade</span>
-          </span>
+          <button
+            onClick={() => useAppStore.getState().toggleUseOldCity()}
+            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40 font-semibold"
+          >
+            City: {useAppStore.getState().useOldCity ? 'Procedural Brownstones' : 'Sketchfab City'}
+          </button>
           <a
             href="/debug/assets"
             className="ml-2 px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-semibold transition-colors"

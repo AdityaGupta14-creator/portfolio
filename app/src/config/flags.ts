@@ -14,8 +14,8 @@ const getInitialOldCityFlag = (): boolean => {
       return params.get('oldCity') === '1' || params.get('oldCity') === 'true';
     }
   }
-  // Default to true while building the new assets, until Step 4 activates the new city
-  return true;
+  // Default to false now that Step 4 activates the new city; pass ?oldCity=1 to revert
+  return false;
 };
 
 export const FLAGS = {

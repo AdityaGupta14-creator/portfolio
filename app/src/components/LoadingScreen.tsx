@@ -5,7 +5,8 @@ export const LoadingScreen: React.FC = () => {
   const { isLoading, loadProgress, setLoadProgress, setIsLoading, viewMode } = useAppStore();
 
   useEffect(() => {
-    if (viewMode === 'classic') {
+    const isNoLoading = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('noloading');
+    if (viewMode === 'classic' || isNoLoading) {
       setIsLoading(false);
       return;
     }
@@ -29,7 +30,8 @@ export const LoadingScreen: React.FC = () => {
     };
   }, [viewMode]);
 
-  if (!isLoading || viewMode === 'classic') return null;
+  const isNoLoading = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('noloading');
+  if (!isLoading || viewMode === 'classic' || isNoLoading) return null;
 
   return (
     <div

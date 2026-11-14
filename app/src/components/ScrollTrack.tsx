@@ -14,8 +14,16 @@ export const ScrollTrack: React.FC = () => {
       }
     };
 
+    // If initial query parameter ?p= is present, set scrollProgress directly without scrolling window
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('p')) {
+      const p = parseFloat(params.get('p') || '0');
+      setScrollProgress(Math.min(1, Math.max(0, p)));
+    } else {
+      handleScroll();
+    }
+
     window.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll();
 
     return () => window.removeEventListener('scroll', handleScroll);
   }, [setScrollProgress]);
