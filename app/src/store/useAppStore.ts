@@ -36,6 +36,10 @@ export interface AppState {
   isTopDownDebug: boolean;
   toggleTopDownDebug: () => void;
 
+  // Dev-only Pedestrian Debug Overlay (Press P)
+  isPedestrianDebug: boolean;
+  togglePedestrianDebug: () => void;
+
   // Guided Tour & Building State
   currentBuilding: number | null; // Currently focused or nearest building (0..4, or null)
   tourStep: number;               // Current tour step (0..4)
@@ -199,6 +203,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       nextTopDown
         ? '🗺️ Top-Down Debug View: ON (Press B to exit)'
         : '🏙️ Street View: Restored'
+    );
+  },
+
+  // Dev-only Pedestrian Debug Overlay (Press P)
+  isPedestrianDebug:
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).has('debugpeds') ||
+        new URLSearchParams(window.location.search).has('peddebug')
+      : false,
+  togglePedestrianDebug: () => {
+    const nextDebug = !get().isPedestrianDebug;
+    set({ isPedestrianDebug: nextDebug });
+    get().showToast(
+      nextDebug
+        ? '🚶 Pedestrian Debug Overlay: ON (Press P to exit)'
+        : '🚶 Pedestrian Debug Overlay: OFF'
     );
   },
 

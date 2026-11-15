@@ -92,6 +92,9 @@ export const App: React.FC = () => {
       } else if ((e.key === 'b' || e.key === 'B') && !isInput) {
         e.preventDefault();
         useAppStore.getState().toggleTopDownDebug();
+      } else if ((e.key === 'p' || e.key === 'P') && !isInput) {
+        e.preventDefault();
+        useAppStore.getState().togglePedestrianDebug();
       }
     };
 
