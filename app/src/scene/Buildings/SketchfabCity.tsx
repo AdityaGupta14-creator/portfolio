@@ -11,6 +11,7 @@ import {
 } from '../../data/buildings';
 import { DistantSkyline } from '../Environment/DistantSkyline';
 import { TopDownDebugView } from './TopDownDebugView';
+import { StorefrontSignsAndAwnings } from './StorefrontSignsAndAwnings';
 import { useAppStore } from '../../store/useAppStore';
 
 // Preload optimized city model with MeshoptDecoder
@@ -116,7 +117,10 @@ export const SketchfabCity: React.FC = () => {
       {/* 2. Dev-only Top-Down Debug Visualizer (Press B to toggle) */}
       {isTopDownDebug && <TopDownDebugView />}
 
-      {/* 3. Two facing rows of continuous Chicago brownstone buildings */}
+      {/* 3. Authentic 3D Storefront Signs, Awnings, and Vintage Lamps for 5 Hero Buildings */}
+      <StorefrontSignsAndAwnings />
+
+      {/* 4. Two facing rows of continuous Chicago brownstone buildings */}
       {allBuildings.map((b) => {
         const raw = b.variant === 1 ? rawB1 : rawB2;
         const buildingMesh = createBuildingClone(raw, b.tintColor);
@@ -188,60 +192,55 @@ export const SketchfabCity: React.FC = () => {
               </mesh>
             )}
 
-            {/* Floating Street Label above Facade Entrance */}
-            <Html
-              position={[0, proxy.labelPos[1], proxy.labelPos[2] - proxy.zPos]}
-              center
-              distanceFactor={22}
-              style={{ pointerEvents: 'none', transition: 'all 0.3s ease' }}
-            >
-              <div
-                className={`transition-all duration-300 transform ${
-                  isHovered || isFocused
-                    ? 'scale-110 -translate-y-1 opacity-100'
-                    : 'scale-95 opacity-85 hover:opacity-100'
-                }`}
+            {/* Floating Street Label above Facade Entrance (Only shown when hovered or focused, avoiding overlap with sign) */}
+            {(isHovered || isFocused) && (
+              <Html
+                position={[0, proxy.labelPos[1], proxy.labelPos[2] - proxy.zPos]}
+                center
+                distanceFactor={22}
+                style={{ pointerEvents: 'none', transition: 'all 0.3s ease' }}
               >
-                <div
-                  className="flex items-center gap-2.5 px-3 py-1.5 rounded-full backdrop-blur-md shadow-2xl border text-left cursor-pointer pointer-events-auto"
-                  style={{
-                    backgroundColor:
-                      isHovered || isFocused ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.8)',
-                    borderColor: isHovered || isFocused ? proxy.trimColor : 'rgba(255, 255, 255, 0.2)',
-                    boxShadow: isHovered || isFocused ? `0 0 20px ${proxy.trimColor}44` : 'none',
-                  }}
-                  onClick={() => focusBuilding(proxy.id)}
-                  onMouseEnter={() => setHoveredBuildingId(proxy.id)}
-                  onMouseLeave={() => setHoveredBuildingId(null)}
-                >
-                  {/* Building Number Badge */}
-                  <span
-                    className="flex items-center justify-center w-6 h-6 rounded-full font-mono text-xs font-bold text-white shadow-inner"
-                    style={{ backgroundColor: proxy.trimColor }}
+                <div className="scale-105 opacity-100 transition-all duration-300">
+                  <div
+                    className="flex items-center gap-2.5 px-3 py-1.5 rounded-full backdrop-blur-md shadow-2xl border text-left cursor-pointer pointer-events-auto"
+                    style={{
+                      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                      borderColor: proxy.trimColor,
+                      boxShadow: `0 0 20px ${proxy.trimColor}44`,
+                    }}
+                    onClick={() => focusBuilding(proxy.id)}
+                    onMouseEnter={() => setHoveredBuildingId(proxy.id)}
+                    onMouseLeave={() => setHoveredBuildingId(null)}
                   >
-                    {proxy.number}
-                  </span>
-
-                  {/* Building Title & Name */}
-                  <div className="flex flex-col pr-1">
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-300 font-mono">
-                      {proxy.storefrontTitle}
+                    {/* Building Number Badge */}
+                    <span
+                      className="flex items-center justify-center w-6 h-6 rounded-full font-mono text-xs font-bold text-white shadow-inner"
+                      style={{ backgroundColor: proxy.trimColor }}
+                    >
+                      {proxy.number}
                     </span>
-                    <span className="text-xs font-semibold text-white leading-tight">
-                      {proxy.name}
+
+                    {/* Building Title & Name */}
+                    <div className="flex flex-col pr-1">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-300 font-mono">
+                        {proxy.storefrontTitle}
+                      </span>
+                      <span className="text-xs font-semibold text-white leading-tight">
+                        {proxy.name}
+                      </span>
+                    </div>
+
+                    {/* Click arrow */}
+                    <span
+                      className="text-xs font-bold transition-transform"
+                      style={{ color: proxy.trimColor }}
+                    >
+                      →
                     </span>
                   </div>
-
-                  {/* Click arrow */}
-                  <span
-                    className="text-xs font-bold transition-transform"
-                    style={{ color: proxy.trimColor }}
-                  >
-                    →
-                  </span>
                 </div>
-              </div>
-            </Html>
+              </Html>
+            )}
           </group>
         );
       })}

@@ -11,8 +11,14 @@ export const SkyHeroOverlay: React.FC = () => {
   const goToHub = useAppStore((s) => s.goToHub);
   const isTopDownDebug = useAppStore((s) => s.isTopDownDebug);
 
-  // Strict mutual exclusivity: Only show when drawer is closed, scrollProgress < 0.11, and not in top-down debug view
-  const isVisible = focusedBuildingIndex === null && scrollProgress < 0.11 && !isTopDownDebug;
+  const isSignsOverview =
+    typeof window !== 'undefined' &&
+    (new URLSearchParams(window.location.search).has('signs') ||
+      new URLSearchParams(window.location.search).get('view') === 'all-signs');
+
+  // Strict mutual exclusivity: Only show when drawer is closed, scrollProgress < 0.11, not in top-down debug view, and not in signs overview
+  const isVisible =
+    focusedBuildingIndex === null && scrollProgress < 0.11 && !isTopDownDebug && !isSignsOverview;
 
   return (
     <AnimatePresence>

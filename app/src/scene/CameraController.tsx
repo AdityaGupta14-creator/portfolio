@@ -146,12 +146,24 @@ export const CameraController: React.FC = () => {
     }
   };
 
+  const isSignsOverview = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    const p = new URLSearchParams(window.location.search);
+    return p.has('signs') || p.get('view') === 'all-signs';
+  }, []);
+
   useFrame(() => {
     if (isTopDownDebug) {
       // Dev-only top-down debug view (Press B)
       camera.position.set(0, 115, RAW_BOUNDS.streetCenterZ);
       camera.up.set(0, 0, -1); // Street runs along X (horizontal), North is UP (-Z), South is DOWN (+Z)
       camera.lookAt(0, 0, RAW_BOUNDS.streetCenterZ);
+      return;
+    } else if (isSignsOverview) {
+      // Perspective down the brownstone promenade showing all 5 storefront signs in sequence
+      camera.position.set(-52.0, 3.8, -2.5);
+      camera.up.set(0, 1, 0);
+      camera.lookAt(12.0, 4.35, -13.40);
       return;
     } else {
       camera.up.set(0, 1, 0);

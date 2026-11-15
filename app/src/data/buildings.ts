@@ -85,6 +85,18 @@ export interface BuildingInstanceDef {
   proxy?: BuildingProxyDef;
 }
 
+export interface StorefrontSignConfig {
+  title: string;
+  subtitle: string;
+  fullText: string;
+  width: number;
+  height: number;
+  depth: number;
+  wallOffset: number;
+  awningColor: string;
+  trimColor: string;
+}
+
 export interface BuildingProxyDef {
   id: number;
   number: string;
@@ -98,6 +110,7 @@ export interface BuildingProxyDef {
   boxSize: [number, number, number]; // [width, height, depth] of click proxy box
   labelPos: [number, number, number]; // [x, y, z] for floating label above entrance door
   facadeVariant: 1 | 2;
+  sign: StorefrontSignConfig;
 }
 
 // ── Bounding-Box Computed Continuous Row Layout ──────────────────────────────
@@ -140,8 +153,19 @@ export const BUILDING_PROXIES: BuildingProxyDef[] = [
     zPos: RAW_BOUNDS.northRowZ,
     boxPos: [Number(X_101.toFixed(3)), RAW_BOUNDS.pavementY + 3.75, RAW_BOUNDS.northRowZ + 1.6],
     boxSize: [12.0, 7.5, 3.2],
-    labelPos: [Number(X_101.toFixed(3)), 7.8, RAW_BOUNDS.northRowZ + 1.5],
+    labelPos: [Number(X_101.toFixed(3)), 6.8, RAW_BOUNDS.northRowZ + 1.5],
     facadeVariant: 2,
+    sign: {
+      title: 'THE STUDIO',
+      subtitle: 'About',
+      fullText: 'THE STUDIO / About',
+      width: 3.2,
+      height: 0.8,
+      depth: 0.1,
+      wallOffset: 0.05,
+      awningColor: '#991f2e',
+      trimColor: '#f87171',
+    },
   },
   {
     id: 1,
@@ -154,8 +178,19 @@ export const BUILDING_PROXIES: BuildingProxyDef[] = [
     zPos: RAW_BOUNDS.northRowZ,
     boxPos: [Number(X_103.toFixed(3)), RAW_BOUNDS.pavementY + 3.75, RAW_BOUNDS.northRowZ + 1.6],
     boxSize: [12.0, 7.5, 3.2],
-    labelPos: [Number(X_103.toFixed(3)), 7.8, RAW_BOUNDS.northRowZ + 1.5],
+    labelPos: [Number(X_103.toFixed(3)), 6.8, RAW_BOUNDS.northRowZ + 1.5],
     facadeVariant: 1,
+    sign: {
+      title: 'TECH FOUNDRY',
+      subtitle: 'Skills',
+      fullText: 'TECH FOUNDRY / Skills',
+      width: 3.2,
+      height: 0.8,
+      depth: 0.1,
+      wallOffset: 0.05,
+      awningColor: '#1e3a5f',
+      trimColor: '#fbbf24',
+    },
   },
   {
     id: 2,
@@ -168,36 +203,69 @@ export const BUILDING_PROXIES: BuildingProxyDef[] = [
     zPos: RAW_BOUNDS.northRowZ,
     boxPos: [Number(X_105.toFixed(3)), RAW_BOUNDS.pavementY + 3.75, RAW_BOUNDS.northRowZ + 1.6],
     boxSize: [12.0, 7.5, 3.2],
-    labelPos: [Number(X_105.toFixed(3)), 7.8, RAW_BOUNDS.northRowZ + 1.5],
+    labelPos: [Number(X_105.toFixed(3)), 6.8, RAW_BOUNDS.northRowZ + 1.5],
     facadeVariant: 2,
+    sign: {
+      title: 'INNOVATION HUB',
+      subtitle: 'Projects',
+      fullText: 'INNOVATION HUB / Projects',
+      width: 3.2,
+      height: 0.8,
+      depth: 0.1,
+      wallOffset: 0.05,
+      awningColor: '#0f766e',
+      trimColor: '#34d399',
+    },
   },
   {
     id: 3,
     number: '107',
     name: 'Resume',
-    storefrontTitle: 'CREDENTIAL ARCHIVE',
+    storefrontTitle: 'CAREER ARCHIVE',
     subtitle: '107 Brownstone Ave • Career & Education',
     trimColor: '#60a5fa',
     xPos: Number(X_107.toFixed(3)),
     zPos: RAW_BOUNDS.northRowZ,
     boxPos: [Number(X_107.toFixed(3)), RAW_BOUNDS.pavementY + 3.75, RAW_BOUNDS.northRowZ + 1.6],
     boxSize: [12.0, 7.5, 3.2],
-    labelPos: [Number(X_107.toFixed(3)), 7.8, RAW_BOUNDS.northRowZ + 1.5],
+    labelPos: [Number(X_107.toFixed(3)), 6.8, RAW_BOUNDS.northRowZ + 1.5],
     facadeVariant: 1,
+    sign: {
+      title: 'CAREER ARCHIVE',
+      subtitle: 'Resume',
+      fullText: 'CAREER ARCHIVE / Resume',
+      width: 3.2,
+      height: 0.8,
+      depth: 0.1,
+      wallOffset: 0.05,
+      awningColor: '#1d4ed8',
+      trimColor: '#60a5fa',
+    },
   },
   {
     id: 4,
     number: '109',
     name: 'Contact',
-    storefrontTitle: 'COMMUNICATION POST',
+    storefrontTitle: 'CONNECT LOUNGE',
     subtitle: '109 Brownstone Ave • Get in Touch',
     trimColor: '#c084fc',
     xPos: Number(X_109.toFixed(3)),
     zPos: RAW_BOUNDS.northRowZ,
     boxPos: [Number(X_109.toFixed(3)), RAW_BOUNDS.pavementY + 3.75, RAW_BOUNDS.northRowZ + 1.6],
     boxSize: [12.0, 7.5, 3.2],
-    labelPos: [Number(X_109.toFixed(3)), 7.8, RAW_BOUNDS.northRowZ + 1.5],
+    labelPos: [Number(X_109.toFixed(3)), 6.8, RAW_BOUNDS.northRowZ + 1.5],
     facadeVariant: 2,
+    sign: {
+      title: 'CONNECT LOUNGE',
+      subtitle: 'Contact',
+      fullText: 'CONNECT LOUNGE / Contact',
+      width: 3.2,
+      height: 0.8,
+      depth: 0.1,
+      wallOffset: 0.05,
+      awningColor: '#7e22ce',
+      trimColor: '#c084fc',
+    },
   },
 ];
 
