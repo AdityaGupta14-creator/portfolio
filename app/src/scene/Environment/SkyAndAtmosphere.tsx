@@ -41,7 +41,7 @@ const THEME_PRESETS = {
     sun: new THREE.Color(0xfff1d6),
     sunIntensity: 1.35,
     windowGlow: 0.0,
-    cloudTint: new THREE.Color(0xffeedd),     // warm-tinted clouds
+    cloudTint: new THREE.Color(0xfff5ea),     // soft warm off-white / peach tint
   },
   goldenEvening: {
     skyHorizon: new THREE.Color(0x4a2040),    // dusky mauve
@@ -53,7 +53,7 @@ const THEME_PRESETS = {
     sun: new THREE.Color(0xff8345),
     sunIntensity: 1.05,
     windowGlow: 1.0,
-    cloudTint: new THREE.Color(0xff9977),     // warm sunset clouds
+    cloudTint: new THREE.Color(0xfce5d4),     // soft warm peach-cream (NOT red)
   },
 };
 
@@ -98,7 +98,7 @@ export const SkyAndAtmosphere: React.FC = () => {
     []
   );
 
-  // Generate 24 clouds matching vanilla distribution
+  // Generate 26 clouds distributed naturally across the upper sky
   const clouds = useMemo<CloudInstance[]>(() => {
     // Seeded-style pseudo-random distribution
     let seed = 42;
@@ -108,26 +108,24 @@ export const SkyAndAtmosphere: React.FC = () => {
     };
 
     const cloudData: CloudInstance[] = [];
-    for (let i = 0; i < 24; i++) {
-      let cx = -120 + rnd() * 240;
-      if (Math.abs(cx) < 45) cx += Math.sign(cx) * 45;
-      let cy = 35 + rnd() * 50;
-      if (cy > 55 && cy < 75) cy += 20;
-      const cz = -38 + (rnd() - 0.5) * 60;
-      const scale = 0.85 + rnd() * 1.25;
+    for (let i = 0; i < 26; i++) {
+      const cx = -140 + rnd() * 280;
+      const cy = 36 + rnd() * 44;
+      const cz = -35 + (rnd() - 0.5) * 80;
+      const scale = 0.95 + rnd() * 1.35;
 
       const puffs = [];
       for (let j = 0; j < 6; j++) {
         puffs.push({
           pos: [
-            (rnd() - 0.5) * 3.5,
-            (rnd() - 0.5) * 1.5,
-            (rnd() - 0.5) * 2.5,
+            (rnd() - 0.5) * 4.0,
+            (rnd() - 0.5) * 1.8,
+            (rnd() - 0.5) * 3.0,
           ] as [number, number, number],
           scale: [
-            1.5 + rnd() * 2.5,
-            (1.5 + rnd() * 2.5) * 0.6,
-            1.5 + rnd() * 2.5,
+            1.6 + rnd() * 2.6,
+            (1.6 + rnd() * 2.6) * 0.65,
+            1.6 + rnd() * 2.6,
           ] as [number, number, number],
         });
       }
@@ -136,7 +134,7 @@ export const SkyAndAtmosphere: React.FC = () => {
         id: i,
         initialPos: [cx, cy, cz],
         scale,
-        speed: 0.015 + rnd() * 0.02,
+        speed: 0.012 + rnd() * 0.02,
         puffs,
       });
     }
@@ -145,12 +143,18 @@ export const SkyAndAtmosphere: React.FC = () => {
 
   const puffGeom = useMemo(() => new THREE.SphereGeometry(1, 16, 16), []);
   const cloudMat = useMemo(
-    () => new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }),
+    () =>
+      new THREE.MeshLambertMaterial({
+        color: 0xfff5ea,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+      }),
     []
   );
 
-  // Animation frame loop: Smooth theme interpolation and cloud drifting
-  useFrame(({ clock }) => {
+  // Animation frame loop: Smooth theme interpolation, cloud fading & drifting
+  useFrame(({ clock, camera }) => {
     const elapsed = clock.getElapsedTime();
     const target = isGoldenEvening ? THEME_PRESETS.goldenEvening : THEME_PRESETS.day;
     const rate = 0.015;
@@ -190,8 +194,16 @@ export const SkyAndAtmosphere: React.FC = () => {
     materials.storefrontWindow.emissiveIntensity +=
       (target.windowGlow - materials.storefrontWindow.emissiveIntensity) * rate;
 
-    // Lerp cloud tint
+    // Lerp cloud tint (soft warm off-white in day, soft warm peach-cream in evening)
     cloudMat.color.lerp(target.cloudTint, rate);
+
+    // ── Fade clouds as camera descends from sky through clouds to street level ──
+    const camY = camera.position.y;
+    // When camY >= 48: full opacity 0.85
+    // As camY drops from 48 down to 14: smoothly fade opacity to 0
+    const cloudFade = THREE.MathUtils.clamp((camY - 14) / 34, 0.0, 1.0);
+    cloudMat.opacity = 0.85 * cloudFade;
+    cloudMat.visible = cloudFade > 0.01;
 
     // Pulse sun halo breathing animation
     if (haloRef.current) {

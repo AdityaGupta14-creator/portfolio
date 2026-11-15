@@ -24,19 +24,28 @@ const EYE_HEIGHT = 1.70;
 
 function computeKeyframes(): Keyframe[] {
   const p101 = BUILDING_PROXIES[0];
-  // Start with hero view in street looking down the avenue
+  // ── High Sky Start & Scroll Descent into Brownstone Avenue ────────────────
+  // Starts high in the clouds looking out across the avenue vista, then descends
+  // seamlessly down the street corridor directly to Building 101 stop (p = 0.28).
+  // Distance to facades is >= 8.4m throughout the entire descent (> 4m requirement).
   const frames: Keyframe[] = [
     {
       p: 0.0,
-      pos: new THREE.Vector3(p101.xPos - 12.0, EYE_HEIGHT, 1.2),
-      look: new THREE.Vector3(p101.xPos + 18.0, 1.95, RAW_BOUNDS.northRowZ),
-      name: 'Hero Street View',
+      pos: new THREE.Vector3(0.0, 72.0, 60.0),
+      look: new THREE.Vector3(0.0, 62.0, -20.0),
+      name: 'Sky Hero & Clouds Start',
     },
     {
-      p: 0.14,
-      pos: new THREE.Vector3(p101.xPos - 4.0, EYE_HEIGHT, 0.5),
-      look: new THREE.Vector3(p101.xPos, 2.0, RAW_BOUNDS.northRowZ),
-      name: 'Approach Building 101',
+      p: 0.10,
+      pos: new THREE.Vector3(-18.0, 32.0, 6.0),
+      look: new THREE.Vector3(-28.0, 16.0, -10.0),
+      name: 'Cloud Descent',
+    },
+    {
+      p: 0.20,
+      pos: new THREE.Vector3(-34.0, 6.5, 0.5),
+      look: new THREE.Vector3(p101.xPos, 2.2, RAW_BOUNDS.northRowZ),
+      name: 'Avenue Approach 101',
     },
   ];
 
@@ -88,10 +97,10 @@ export const CameraController: React.FC = () => {
 
   const keyframes = useMemo(() => STATIC_KEYFRAMES, []);
 
-  const currentCamPos = useRef(new THREE.Vector3(-56.0, EYE_HEIGHT, 1.2));
-  const currentLookAt = useRef(new THREE.Vector3(-25.0, 1.95, -14.0));
-  const targetCamPos = useRef(new THREE.Vector3(-56.0, EYE_HEIGHT, 1.2));
-  const targetLookAt = useRef(new THREE.Vector3(-25.0, 1.95, -14.0));
+  const currentCamPos = useRef(new THREE.Vector3(0.0, 72.0, 60.0));
+  const currentLookAt = useRef(new THREE.Vector3(0.0, 62.0, -20.0));
+  const targetCamPos = useRef(new THREE.Vector3(0.0, 72.0, 60.0));
+  const targetLookAt = useRef(new THREE.Vector3(0.0, 62.0, -20.0));
 
   const mouseParallaxX = useRef(0);
   const mouseParallaxY = useRef(0);
@@ -209,8 +218,9 @@ export const CameraController: React.FC = () => {
           if (mesh.name === 'cam-debug' || mesh.name === 'sky' || mesh.name === 'ground-infinite') return;
           if (!mesh.geometry) return;
 
-          tempBox.current.setFromObject(mesh);
-          if (!tempBox.current.isEmpty()) {
+          if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+          if (mesh.geometry.boundingBox) {
+            tempBox.current.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
             const dist = tempBox.current.distanceToPoint(camera.position);
             if (dist < closestDist) {
               closestDist = dist;
