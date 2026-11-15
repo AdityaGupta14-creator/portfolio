@@ -1,702 +1,511 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
-import { useGLTF } from '@react-three/drei';
-import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { useAppStore } from '../../store/useAppStore';
-import { PORTFOLIO_CONTENT } from '../../data/content';
-import { textures } from '../../utils/proceduralTextures';
+import { BUILDING_PROXIES, RAW_BOUNDS } from '../../data/buildings';
 import { SpeechBubble } from './SpeechBubble';
 
-// Pre-configure MeshoptDecoder for GLTF loading
-useGLTF.preload('/models/characters.opt.glb', true, true, (loader) => {
-  loader.setMeshoptDecoder(MeshoptDecoder);
-});
+// ── Waypoint & Stop Constants ────────────────────────────────────────────────
+// 5 Hero Building Stops along the North Sidewalk (in front of each building entrance)
+// North row facades are at Z = -13.4. Sidewalk runs along Z = -10.0 at pavement height Y = 0.16.
+// Offset X by -1.8m so the host stands beside the entrance door, keeping the door & sign visible.
+const HOST_BUILDING_STOPS: THREE.Vector3[] = [
+  new THREE.Vector3(BUILDING_PROXIES[0].xPos - 1.8, RAW_BOUNDS.pavementY, -10.0), // 101 About:  (-40.27, 0.16, -10.0)
+  new THREE.Vector3(BUILDING_PROXIES[1].xPos - 1.8, RAW_BOUNDS.pavementY, -10.0), // 103 Skills: (-21.03, 0.16, -10.0)
+  new THREE.Vector3(BUILDING_PROXIES[2].xPos - 1.8, RAW_BOUNDS.pavementY, -10.0), // 105 Projects: (-1.80, 0.16, -10.0)
+  new THREE.Vector3(BUILDING_PROXIES[3].xPos - 1.8, RAW_BOUNDS.pavementY, -10.0), // 107 Resume:  (+17.43, 0.16, -10.0)
+  new THREE.Vector3(BUILDING_PROXIES[4].xPos - 1.8, RAW_BOUNDS.pavementY, -10.0), // 109 Contact: (+36.67, 0.16, -10.0)
+];
 
-// Reusable math vectors to avoid heap allocation in useFrame
-const AXIS_X = new THREE.Vector3(1, 0, 0);
-const AXIS_Y = new THREE.Vector3(0, 1, 0);
-const AXIS_Z = new THREE.Vector3(0, 0, 1);
-const TEMP_Q = new THREE.Quaternion();
-const TEMP_Q2 = new THREE.Quaternion();
+// Final Hub Overview Stop (framed in front of the camera at (43.5, 1.70, 2.2) on south pavement)
+const HOST_HUB_STOP = new THREE.Vector3(38.8, 0.10, 4.6);
 
-interface AvatarRigProps {
-  walkBlendRef: React.MutableRefObject<number>;
-  manualWaveBoostRef: React.MutableRefObject<number>;
-  isWaving: boolean;
-  onWaveClick: () => void;
+// Sidewalk Crosswalk Corner Waypoint for transitioning between north sidewalk and south pavement
+const CROSSWALK_NORTH_CORNER = new THREE.Vector3(38.0, RAW_BOUNDS.pavementY, -10.0);
+
+// Calibrated Stride & Speed Physics for zero foot sliding:
+// Raw FBX height = 179.27 cm, stride = 177.86 cm, duration = 1.033 s.
+// At 1.75m scaled height, stride is 1.7362m -> natural walking speed = 1.68 m/s.
+const BASE_WALK_SPEED = 1.68; // meters / second
+const STOP_DISTANCE_THRESHOLD = 0.22; // meters to consider stop reached
+const CROSSFADE_DURATION = 0.3; // seconds
+
+type HostState = 'WALKING' | 'WAVING' | 'STANDING';
+
+/**
+ * Computes the target waypoint from scroll progress or focused building
+ */
+function getActiveTarget(
+  scrollProgress: number,
+  focusedBuildingIndex: number | null
+): THREE.Vector3 {
+  if (focusedBuildingIndex !== null && focusedBuildingIndex >= 0 && focusedBuildingIndex < HOST_BUILDING_STOPS.length) {
+    return HOST_BUILDING_STOPS[focusedBuildingIndex];
+  }
+  if (scrollProgress >= 0.92) {
+    return HOST_HUB_STOP;
+  }
+  if (scrollProgress < 0.36) {
+    return HOST_BUILDING_STOPS[0];
+  } else if (scrollProgress < 0.51) {
+    return HOST_BUILDING_STOPS[1];
+  } else if (scrollProgress < 0.65) {
+    return HOST_BUILDING_STOPS[2];
+  } else if (scrollProgress < 0.79) {
+    return HOST_BUILDING_STOPS[3];
+  } else {
+    return HOST_BUILDING_STOPS[4];
+  }
 }
 
-const ProceduralAvatar: React.FC<AvatarRigProps> = ({
-  walkBlendRef,
-  manualWaveBoostRef,
-  isWaving,
-  onWaveClick,
-}) => {
-  const leftLegHipRef = useRef<THREE.Group>(null);
-  const rightLegHipRef = useRef<THREE.Group>(null);
-  const leftLegKneeRef = useRef<THREE.Group>(null);
-  const rightLegKneeRef = useRef<THREE.Group>(null);
-  const leftArmShoulderRef = useRef<THREE.Group>(null);
-  const leftArmElbowRef = useRef<THREE.Group>(null);
-  const rightArmShoulderRef = useRef<THREE.Group>(null);
-  const rightArmElbowRef = useRef<THREE.Group>(null);
-  const rightArmWristRef = useRef<THREE.Group>(null);
-  const hipsRef = useRef<THREE.Group>(null);
-  const torsoRef = useRef<THREE.Group>(null);
-  const neckRef = useRef<THREE.Group>(null);
-  const groundRingRef = useRef<THREE.Mesh>(null);
+/**
+ * Assigns tailored materials with proper lighting and shadow responses to avatar meshes
+ */
+function applyAvatarMaterials(avatar: THREE.Group) {
+  avatar.traverse((child) => {
+    if ((child as THREE.Mesh).isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+      const mesh = child as THREE.Mesh;
+      const name = mesh.name.toLowerCase();
 
-  // Reusable Materials
-  const skinMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: 0xe5ad8c, roughness: 0.58, metalness: 0.04 }),
-    []
-  );
-  const jacketMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ map: textures.denimJacket, roughness: 0.72, metalness: 0.08 }),
-    []
-  );
-  const shirtMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ map: textures.coralShirt, roughness: 0.78 }),
-    []
-  );
-  const jeansMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ map: textures.jeans, roughness: 0.82 }),
-    []
-  );
-  const bootMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: 0x1c1e21, roughness: 0.5, metalness: 0.15 }),
-    []
-  );
-  const hairMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.65 }),
-    []
-  );
-  const buttonMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.25, metalness: 0.85 }),
-    []
-  );
+      let color = 0x27303f; // Default tailored navy suit
+      let roughness = 0.68;
+      let metalness = 0.08;
 
-  useFrame(({ clock }) => {
-    const elapsed = clock.getElapsedTime();
-    const walkBlend = walkBlendRef.current;
-    const gaitPhase = elapsed * 8.5;
-
-    // Pulse ground ring
-    if (groundRingRef.current) {
-      groundRingRef.current.scale.setScalar(1 + Math.sin(elapsed * 3.2) * 0.08);
-    }
-
-    const legSwing = Math.sin(gaitPhase) * 0.55 * walkBlend;
-    const oppLegSwing = Math.sin(gaitPhase + Math.PI) * 0.55 * walkBlend;
-
-    // Legs animation
-    if (leftLegHipRef.current) leftLegHipRef.current.rotation.x = legSwing;
-    if (rightLegHipRef.current) rightLegHipRef.current.rotation.x = oppLegSwing;
-    if (leftLegKneeRef.current)
-      leftLegKneeRef.current.rotation.x = Math.max(0, -Math.cos(gaitPhase) * 0.52 * walkBlend);
-    if (rightLegKneeRef.current)
-      rightLegKneeRef.current.rotation.x = Math.max(0, -Math.cos(gaitPhase + Math.PI) * 0.52 * walkBlend);
-
-    // Hips vertical bob + breathing
-    if (hipsRef.current) {
-      hipsRef.current.position.y =
-        1.02 + Math.abs(Math.sin(gaitPhase)) * 0.045 * walkBlend + Math.sin(elapsed * 2.2) * 0.008;
-    }
-    if (torsoRef.current) {
-      torsoRef.current.rotation.y = Math.sin(gaitPhase) * 0.08 * walkBlend;
-    }
-
-    // Left arm walking swing
-    if (leftArmShoulderRef.current) {
-      leftArmShoulderRef.current.rotation.x = oppLegSwing * 0.75;
-      leftArmShoulderRef.current.rotation.z = 0.09;
-    }
-    if (leftArmElbowRef.current) {
-      leftArmElbowRef.current.rotation.x = -0.18 - Math.max(0, oppLegSwing) * 0.35;
-    }
-
-    // Right arm waving vs walking
-    const shouldWave = isWaving || manualWaveBoostRef.current > 0;
-    if (rightArmShoulderRef.current && rightArmElbowRef.current && rightArmWristRef.current) {
-      if (shouldWave && walkBlend < 0.35) {
-        const waveOsc = Math.sin(elapsed * 6.8) * 0.32;
-        rightArmShoulderRef.current.rotation.x = THREE.MathUtils.lerp(
-          rightArmShoulderRef.current.rotation.x,
-          -0.55,
-          0.12
-        );
-        rightArmShoulderRef.current.rotation.z = THREE.MathUtils.lerp(
-          rightArmShoulderRef.current.rotation.z,
-          -2.15 + waveOsc,
-          0.15
-        );
-        rightArmElbowRef.current.rotation.x = THREE.MathUtils.lerp(
-          rightArmElbowRef.current.rotation.x,
-          -0.95,
-          0.14
-        );
-        rightArmWristRef.current.rotation.z = Math.sin(elapsed * 13.5) * 0.25;
-      } else {
-        rightArmShoulderRef.current.rotation.x = THREE.MathUtils.lerp(
-          rightArmShoulderRef.current.rotation.x,
-          legSwing * 0.75,
-          0.12
-        );
-        rightArmShoulderRef.current.rotation.z = THREE.MathUtils.lerp(
-          rightArmShoulderRef.current.rotation.z,
-          -0.09,
-          0.12
-        );
-        rightArmElbowRef.current.rotation.x = THREE.MathUtils.lerp(
-          rightArmElbowRef.current.rotation.x,
-          -0.18 - Math.max(0, legSwing) * 0.35,
-          0.12
-        );
-        rightArmWristRef.current.rotation.z = 0;
+      if (name.includes('body') || name.includes('skin') || name.includes('face') || name.includes('head')) {
+        color = 0xdfab8c;
+        roughness = 0.58;
+        metalness = 0.02;
+      } else if (name.includes('suit') || name.includes('coat') || name.includes('jacket')) {
+        color = 0x27303f;
+        roughness = 0.65;
+        metalness = 0.05;
+      } else if (name.includes('pants') || name.includes('trousers')) {
+        color = 0x27303f;
+        roughness = 0.7;
+        metalness = 0.05;
+      } else if (name.includes('shirt')) {
+        color = 0xf8fafc;
+        roughness = 0.78;
+        metalness = 0.02;
+      } else if (name.includes('shoe') || name.includes('boot')) {
+        color = 0x11141c;
+        roughness = 0.35;
+        metalness = 0.22;
+      } else if (name.includes('hair') || name.includes('eyelash')) {
+        color = 0x18181b;
+        roughness = 0.85;
+      } else if (name.includes('belt')) {
+        color = 0x09090b;
+        roughness = 0.4;
+        metalness = 0.35;
       }
-    }
 
-    if (neckRef.current) {
-      neckRef.current.rotation.y = Math.sin(elapsed * 1.3) * 0.12 * (1 - walkBlend);
-      neckRef.current.rotation.x = Math.sin(elapsed * 2.4) * 0.04;
+      mesh.material = new THREE.MeshStandardMaterial({
+        color,
+        roughness,
+        metalness,
+      });
     }
   });
-
-  return (
-    <group
-      onClick={(e) => {
-        e.stopPropagation();
-        onWaveClick();
-      }}
-      onPointerOver={(e) => {
-        e.stopPropagation();
-        document.body.style.cursor = 'pointer';
-      }}
-      onPointerOut={() => {
-        document.body.style.cursor = 'default';
-      }}
-    >
-      {/* Ground Contact Glow Ring */}
-      <mesh ref={groundRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
-        <ringGeometry args={[0.62, 0.78, 32]} />
-        <meshBasicMaterial color={0xfbbf24} side={THREE.DoubleSide} transparent opacity={0.55} />
-      </mesh>
-
-      {/* Pelvis & Hips */}
-      <group ref={hipsRef} position={[0, 1.02, 0]}>
-        <mesh material={jeansMat} castShadow>
-          <boxGeometry args={[0.46, 0.2, 0.27]} />
-        </mesh>
-        <mesh position={[0, 0.04, 0.14]} rotation={[Math.PI / 2, 0, 0]} material={buttonMat}>
-          <cylinderGeometry args={[0.022, 0.022, 0.02, 10]} />
-        </mesh>
-
-        {/* Torso & Denim Jacket */}
-        <group ref={torsoRef} position={[0, 0.1, 0]}>
-          <mesh position={[0, 0.34, 0]} material={shirtMat} castShadow>
-            <boxGeometry args={[0.42, 0.66, 0.24]} />
-          </mesh>
-          <mesh position={[0, 0.35, -0.07]} material={jacketMat} castShadow>
-            <boxGeometry args={[0.5, 0.68, 0.14]} />
-          </mesh>
-          <mesh position={[0.16, 0.35, 0.01]} material={jacketMat} castShadow>
-            <boxGeometry args={[0.18, 0.68, 0.28]} />
-          </mesh>
-          <mesh position={[-0.16, 0.35, 0.01]} material={jacketMat} castShadow>
-            <boxGeometry args={[0.18, 0.68, 0.28]} />
-          </mesh>
-          <mesh position={[0, 0.65, 0]} material={jacketMat} castShadow>
-            <boxGeometry args={[0.54, 0.12, 0.29]} />
-          </mesh>
-
-          {/* Neck & Head */}
-          <group ref={neckRef} position={[0, 0.72, 0]}>
-            <mesh position={[0, 0.05, 0]} material={skinMat}>
-              <cylinderGeometry args={[0.075, 0.085, 0.14, 14]} />
-            </mesh>
-            <mesh position={[0, 0.24, 0]} scale={[0.92, 1.08, 0.95]} material={skinMat} castShadow>
-              <sphereGeometry args={[0.195, 24, 24]} />
-            </mesh>
-            <mesh
-              position={[0, 0.26, -0.01]}
-              scale={[0.94, 1.08, 0.98]}
-              rotation={[-0.12, 0, 0]}
-              material={hairMat}
-            >
-              <sphereGeometry args={[0.205, 20, 18, 0, Math.PI * 2, 0, Math.PI * 0.58]} />
-            </mesh>
-            <mesh position={[0.01, 0.42, 0.09]} rotation={[-0.22, 0, -0.06]} material={hairMat}>
-              <boxGeometry args={[0.27, 0.09, 0.16]} />
-            </mesh>
-          </group>
-
-          {/* Left Articulated Arm */}
-          <group ref={leftArmShoulderRef} position={[0.31, 0.62, 0]}>
-            <mesh position={[0, -0.17, 0]} material={jacketMat} castShadow>
-              <cylinderGeometry args={[0.075, 0.066, 0.34, 12]} />
-            </mesh>
-            <group ref={leftArmElbowRef} position={[0, -0.34, 0]}>
-              <mesh position={[0, -0.15, 0]} material={jacketMat} castShadow>
-                <cylinderGeometry args={[0.064, 0.054, 0.3, 12]} />
-              </mesh>
-              <mesh position={[0, -0.36, 0]} material={skinMat}>
-                <boxGeometry args={[0.065, 0.095, 0.035]} />
-              </mesh>
-            </group>
-          </group>
-
-          {/* Right Articulated Arm */}
-          <group ref={rightArmShoulderRef} position={[-0.31, 0.62, 0]}>
-            <mesh position={[0, -0.17, 0]} material={jacketMat} castShadow>
-              <cylinderGeometry args={[0.075, 0.066, 0.34, 12]} />
-            </mesh>
-            <group ref={rightArmElbowRef} position={[0, -0.34, 0]}>
-              <mesh position={[0, -0.15, 0]} material={jacketMat} castShadow>
-                <cylinderGeometry args={[0.064, 0.054, 0.3, 12]} />
-              </mesh>
-              <group ref={rightArmWristRef} position={[0, -0.33, 0]}>
-                <mesh position={[0, -0.03, 0]} material={skinMat}>
-                  <boxGeometry args={[0.065, 0.095, 0.035]} />
-                </mesh>
-              </group>
-            </group>
-          </group>
-        </group>
-
-        {/* Articulated Legs */}
-        <group ref={leftLegHipRef} position={[0.135, -0.04, 0]}>
-          <mesh position={[0, -0.23, 0]} material={jeansMat} castShadow>
-            <cylinderGeometry args={[0.098, 0.082, 0.46, 14]} />
-          </mesh>
-          <group ref={leftLegKneeRef} position={[0, -0.46, 0]}>
-            <mesh position={[0, -0.22, 0]} material={jeansMat} castShadow>
-              <cylinderGeometry args={[0.08, 0.07, 0.44, 14]} />
-            </mesh>
-            <mesh position={[0, -0.43, 0.035]} material={bootMat} castShadow>
-              <boxGeometry args={[0.135, 0.13, 0.24]} />
-            </mesh>
-          </group>
-        </group>
-
-        <group ref={rightLegHipRef} position={[-0.135, -0.04, 0]}>
-          <mesh position={[0, -0.23, 0]} material={jeansMat} castShadow>
-            <cylinderGeometry args={[0.098, 0.082, 0.46, 14]} />
-          </mesh>
-          <group ref={rightLegKneeRef} position={[0, -0.46, 0]}>
-            <mesh position={[0, -0.22, 0]} material={jeansMat} castShadow>
-              <cylinderGeometry args={[0.08, 0.07, 0.44, 14]} />
-            </mesh>
-            <mesh position={[0, -0.43, 0.035]} material={bootMat} castShadow>
-              <boxGeometry args={[0.135, 0.13, 0.24]} />
-            </mesh>
-          </group>
-        </group>
-      </group>
-    </group>
-  );
-};
-
-interface HostRigBones {
-  thighL: THREE.Bone | null;
-  thighR: THREE.Bone | null;
-  shinL: THREE.Bone | null;
-  shinR: THREE.Bone | null;
-  footL: THREE.Bone | null;
-  footR: THREE.Bone | null;
-  upperArmL: THREE.Bone | null;
-  upperArmR: THREE.Bone | null;
-  forearmL: THREE.Bone | null;
-  forearmR: THREE.Bone | null;
-  handR: THREE.Bone | null;
-  spine: THREE.Bone | null;
-  spineUpper: THREE.Bone | null;
 }
-
-interface HostRestQuats {
-  thighL: THREE.Quaternion;
-  thighR: THREE.Quaternion;
-  shinL: THREE.Quaternion;
-  shinR: THREE.Quaternion;
-  footL: THREE.Quaternion;
-  footR: THREE.Quaternion;
-  upperArmL: THREE.Quaternion;
-  upperArmR: THREE.Quaternion;
-  forearmL: THREE.Quaternion;
-  forearmR: THREE.Quaternion;
-  handR: THREE.Quaternion;
-  spine: THREE.Quaternion;
-  spineUpper: THREE.Quaternion;
-}
-
-interface SketchfabHostAvatarProps {
-  walkBlend: number;
-  manualWaveBoost: number;
-  isWaving: boolean;
-  onWaveClick: () => void;
-}
-
-const SketchfabHostAvatar: React.FC<SketchfabHostAvatarProps> = ({
-  walkBlend,
-  manualWaveBoost,
-  isWaving,
-  onWaveClick,
-}) => {
-  const gltf = useGLTF('/models/characters.opt.glb', true, true, (loader) => {
-    loader.setMeshoptDecoder(MeshoptDecoder);
-  });
-
-  const rootGroupRef = useRef<THREE.Group>(null);
-  const gaitPhaseRef = useRef(0);
-
-  // Isolate Rig 0: Business man (Host character)
-  const { characterObj, bones, restQuats } = useMemo(() => {
-    const fullClone = SkeletonUtils.clone(gltf.scene);
-
-    // Keep only metarig.009_38 (Business man / Host)
-    const otherRigs: THREE.Object3D[] = [];
-    fullClone.traverse((obj) => {
-      if (obj.name.startsWith('metarig') && !obj.name.includes('009')) {
-        otherRigs.push(obj);
-      }
-    });
-    otherRigs.forEach((rig) => rig.parent?.remove(rig));
-
-    // Compute bounding box for human stature scaling
-    const rawBox = new THREE.Box3().setFromObject(fullClone);
-    const rawCenter = new THREE.Vector3();
-    rawBox.getCenter(rawCenter);
-    const rawHeight = rawBox.max.y - rawBox.min.y;
-
-    // Scale precisely to 1.75 units tall (human scale)
-    const targetHeight = 1.75;
-    const scaleFactor = targetHeight / (rawHeight || 1.75);
-
-    // Re-center X and Z at 0, feet exactly on the pavement Y=0
-    fullClone.position.set(-rawCenter.x, -rawBox.min.y, -rawCenter.z);
-
-    // Create container group with uniform scale
-    const container = new THREE.Group();
-    container.scale.set(scaleFactor, scaleFactor, scaleFactor);
-    container.add(fullClone);
-
-    // Locate the 38-bone Rigify skeletal joints
-    const b: HostRigBones = {
-      thighL: null,
-      thighR: null,
-      shinL: null,
-      shinR: null,
-      footL: null,
-      footR: null,
-      upperArmL: null,
-      upperArmR: null,
-      forearmL: null,
-      forearmR: null,
-      handR: null,
-      spine: null,
-      spineUpper: null,
-    };
-
-    fullClone.traverse((o) => {
-      if ((o as THREE.Bone).isBone) {
-        const n = o.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (n.includes('thighl') && !b.thighL) b.thighL = o as THREE.Bone;
-        if (n.includes('thighr') && !b.thighR) b.thighR = o as THREE.Bone;
-        if (n.includes('shinl') && !b.shinL) b.shinL = o as THREE.Bone;
-        if (n.includes('shinr') && !b.shinR) b.shinR = o as THREE.Bone;
-        if (n.includes('footl') && !b.footL) b.footL = o as THREE.Bone;
-        if (n.includes('footr') && !b.footR) b.footR = o as THREE.Bone;
-        if (n.includes('upperarml') && !b.upperArmL) b.upperArmL = o as THREE.Bone;
-        if (n.includes('upperarmr') && !b.upperArmR) b.upperArmR = o as THREE.Bone;
-        if (n.includes('forearml') && !b.forearmL) b.forearmL = o as THREE.Bone;
-        if (n.includes('forearmr') && !b.forearmR) b.forearmR = o as THREE.Bone;
-        if (n.includes('handr') && !b.handR) b.handR = o as THREE.Bone;
-        if (n === 'spine' || n.includes('spine001')) {
-          if (!b.spine) b.spine = o as THREE.Bone;
-        }
-        if (n.includes('spine002') || n.includes('chest')) {
-          if (!b.spineUpper) b.spineUpper = o as THREE.Bone;
-        }
-      }
-    });
-
-    const rq: HostRestQuats = {
-      thighL: b.thighL ? b.thighL.quaternion.clone() : new THREE.Quaternion(),
-      thighR: b.thighR ? b.thighR.quaternion.clone() : new THREE.Quaternion(),
-      shinL: b.shinL ? b.shinL.quaternion.clone() : new THREE.Quaternion(),
-      shinR: b.shinR ? b.shinR.quaternion.clone() : new THREE.Quaternion(),
-      footL: b.footL ? b.footL.quaternion.clone() : new THREE.Quaternion(),
-      footR: b.footR ? b.footR.quaternion.clone() : new THREE.Quaternion(),
-      upperArmL: b.upperArmL ? b.upperArmL.quaternion.clone() : new THREE.Quaternion(),
-      upperArmR: b.upperArmR ? b.upperArmR.quaternion.clone() : new THREE.Quaternion(),
-      forearmL: b.forearmL ? b.forearmL.quaternion.clone() : new THREE.Quaternion(),
-      forearmR: b.forearmR ? b.forearmR.quaternion.clone() : new THREE.Quaternion(),
-      handR: b.handR ? b.handR.quaternion.clone() : new THREE.Quaternion(),
-      spine: b.spine ? b.spine.quaternion.clone() : new THREE.Quaternion(),
-      spineUpper: b.spineUpper ? b.spineUpper.quaternion.clone() : new THREE.Quaternion(),
-    };
-
-    return { characterObj: container, bones: b, restQuats: rq };
-  }, [gltf]);
-
-  // Procedural walk, idle, and waving animation
-  useFrame(({ clock }, delta) => {
-    const elapsed = clock.getElapsedTime();
-    const clampedDelta = Math.min(delta, 0.05);
-
-    if (walkBlend > 0.05) {
-      gaitPhaseRef.current += clampedDelta * 6.2 * (0.35 + 0.65 * walkBlend);
-    }
-    const phase = gaitPhaseRef.current;
-    const sinCycle = Math.sin(phase);
-    const cosCycle = Math.cos(phase);
-
-    // 1. Thigh swing
-    const thighAngle = sinCycle * 0.42 * walkBlend;
-    if (bones.thighL) {
-      TEMP_Q.setFromAxisAngle(AXIS_X, thighAngle);
-      bones.thighL.quaternion.copy(restQuats.thighL).multiply(TEMP_Q);
-    }
-    if (bones.thighR) {
-      TEMP_Q.setFromAxisAngle(AXIS_X, -thighAngle);
-      bones.thighR.quaternion.copy(restQuats.thighR).multiply(TEMP_Q);
-    }
-
-    // 2. Knee bend (shin clamped backward flexion)
-    if (bones.shinL) {
-      const kneeBend = Math.max(0, -sinCycle) * (0.55 * walkBlend);
-      TEMP_Q.setFromAxisAngle(AXIS_X, kneeBend);
-      bones.shinL.quaternion.copy(restQuats.shinL).multiply(TEMP_Q);
-    }
-    if (bones.shinR) {
-      const kneeBend = Math.max(0, sinCycle) * (0.55 * walkBlend);
-      TEMP_Q.setFromAxisAngle(AXIS_X, kneeBend);
-      bones.shinR.quaternion.copy(restQuats.shinR).multiply(TEMP_Q);
-    }
-
-    // 3. Foot / Ankle compensation
-    if (bones.footL) {
-      const footTilt = sinCycle * (0.18 * walkBlend);
-      TEMP_Q.setFromAxisAngle(AXIS_X, -footTilt);
-      bones.footL.quaternion.copy(restQuats.footL).multiply(TEMP_Q);
-    }
-    if (bones.footR) {
-      const footTilt = -sinCycle * (0.18 * walkBlend);
-      TEMP_Q.setFromAxisAngle(AXIS_X, -footTilt);
-      bones.footR.quaternion.copy(restQuats.footR).multiply(TEMP_Q);
-    }
-
-    // 4. Left Arm walking swing
-    const armAngleL = sinCycle * (0.35 * walkBlend);
-    if (bones.upperArmL) {
-      TEMP_Q.setFromAxisAngle(AXIS_X, armAngleL);
-      bones.upperArmL.quaternion.copy(restQuats.upperArmL).multiply(TEMP_Q);
-    }
-    if (bones.forearmL) {
-      const elbowBend = 0.12 + Math.max(0, armAngleL) * 0.4;
-      TEMP_Q.setFromAxisAngle(AXIS_X, elbowBend);
-      bones.forearmL.quaternion.copy(restQuats.forearmL).multiply(TEMP_Q);
-    }
-
-    // 5. Right Arm: Waving gesture vs. Walk swing
-    const shouldWave = (isWaving || manualWaveBoost > 0) && walkBlend < 0.35;
-    if (shouldWave) {
-      const waveOsc = Math.sin(elapsed * 7.5) * 0.22;
-      if (bones.upperArmR) {
-        TEMP_Q.setFromAxisAngle(AXIS_X, -0.65);
-        TEMP_Q2.setFromAxisAngle(AXIS_Z, -1.35 + waveOsc);
-        TEMP_Q.multiply(TEMP_Q2);
-        bones.upperArmR.quaternion.copy(restQuats.upperArmR).multiply(TEMP_Q);
-      }
-      if (bones.forearmR) {
-        TEMP_Q.setFromAxisAngle(AXIS_X, -0.85);
-        bones.forearmR.quaternion.copy(restQuats.forearmR).multiply(TEMP_Q);
-      }
-      if (bones.handR) {
-        const flutter = Math.sin(elapsed * 15.0) * 0.35;
-        TEMP_Q.setFromAxisAngle(AXIS_Z, flutter);
-        bones.handR.quaternion.copy(restQuats.handR).multiply(TEMP_Q);
-      }
-    } else {
-      const armAngleR = -sinCycle * (0.35 * walkBlend);
-      if (bones.upperArmR) {
-        TEMP_Q.setFromAxisAngle(AXIS_X, armAngleR);
-        bones.upperArmR.quaternion.copy(restQuats.upperArmR).multiply(TEMP_Q);
-      }
-      if (bones.forearmR) {
-        const elbowBend = 0.12 + Math.max(0, armAngleR) * 0.4;
-        TEMP_Q.setFromAxisAngle(AXIS_X, elbowBend);
-        bones.forearmR.quaternion.copy(restQuats.forearmR).multiply(TEMP_Q);
-      }
-      if (bones.handR) {
-        bones.handR.quaternion.copy(restQuats.handR);
-      }
-    }
-
-    // 6. Spine twist & idle breathing
-    if (bones.spine) {
-      const twist = -sinCycle * 0.04 * walkBlend;
-      const breath = Math.sin(elapsed * 2.0) * 0.015 * (1 - walkBlend);
-      TEMP_Q.setFromAxisAngle(AXIS_Y, twist);
-      TEMP_Q2.setFromAxisAngle(AXIS_X, breath);
-      TEMP_Q.multiply(TEMP_Q2);
-      bones.spine.quaternion.copy(restQuats.spine).multiply(TEMP_Q);
-    }
-
-    // 7. Pelvis vertical bob
-    if (rootGroupRef.current) {
-      const bob = Math.abs(cosCycle) * 0.032 * walkBlend + Math.sin(elapsed * 0.9) * 0.006 * (1 - walkBlend);
-      rootGroupRef.current.position.y = bob;
-    }
-  });
-
-  return (
-    <group
-      ref={rootGroupRef}
-      onClick={(e) => {
-        e.stopPropagation();
-        onWaveClick();
-      }}
-      onPointerOver={(e) => {
-        e.stopPropagation();
-        document.body.style.cursor = 'pointer';
-      }}
-      onPointerOut={() => {
-        document.body.style.cursor = 'default';
-      }}
-    >
-      <primitive object={characterObj} />
-
-      {/* Ground Contact Glow Ring */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <ringGeometry args={[0.55, 0.72, 32]} />
-        <meshBasicMaterial color={0xfbbf24} side={THREE.DoubleSide} transparent opacity={0.55} />
-      </mesh>
-
-      {/* Soft Contact Shadow Disc */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-        <ringGeometry args={[0.05, 0.55, 32]} />
-        <meshBasicMaterial color="#000000" transparent opacity={0.35} depthWrite={false} />
-      </mesh>
-    </group>
-  );
-};
 
 export const HostCharacter: React.FC = () => {
   const rootRef = useRef<THREE.Group>(null);
   const scrollProgress = useAppStore((s) => s.scrollProgress);
   const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
-  const useOldCity = useAppStore((s) => s.useOldCity);
   const showToast = useAppStore((s) => s.showToast);
   const { camera } = useThree();
 
-  const computeTargetPos = (sp: number, fIdx: number | null): THREE.Vector3 => {
-    if (fIdx !== null) {
-      const b = PORTFOLIO_CONTENT.buildings[fIdx];
-      return new THREE.Vector3(b.xPos - 2.4, 0.16, useOldCity ? -7.8 : -11.5);
+  const [avatarGroup, setAvatarGroup] = useState<THREE.Group | null>(null);
+  const [loadError, setLoadError] = useState<boolean>(false);
+
+  // Animation & state refs
+  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  const actionsRef = useRef<{
+    walk?: THREE.AnimationAction;
+    wave?: THREE.AnimationAction;
+    idle?: THREE.AnimationAction;
+  }>({});
+  const hostStateRef = useRef<HostState>('WAVING');
+  const currentActionRef = useRef<THREE.AnimationAction | null>(null);
+
+  // Position & orientation tracking
+  const initialPos = useMemo(() => getActiveTarget(scrollProgress, focusedBuildingIndex), []);
+  const currentPos = useRef<THREE.Vector3>(initialPos.clone());
+  const activeWaypointTarget = useRef<THREE.Vector3>(initialPos.clone());
+  const finalStopTarget = useRef<THREE.Vector3>(initialPos.clone());
+  const currentYaw = useRef<number>(0);
+  const isFirstFrame = useRef<boolean>(true);
+  const waveTimerRef = useRef<number>(0);
+
+  // Helper to crossfade between actions
+  const crossfadeToAction = (toAction?: THREE.AnimationAction, duration = CROSSFADE_DURATION) => {
+    if (!toAction) return;
+    const fromAction = currentActionRef.current;
+    if (fromAction === toAction && toAction.isRunning()) return;
+
+    toAction.reset();
+    toAction.enabled = true;
+    toAction.setEffectiveWeight(1);
+
+    if (fromAction && fromAction.isRunning()) {
+      fromAction.crossFadeTo(toAction, duration, true);
+    } else {
+      toAction.fadeIn(duration);
     }
-    if (sp > 0.88) {
-      // Hub destination: standing on pavement at (38.8, 0.10, 4.6), 5-6m in front of hub camera (43.5, 1.70, 2.2)
-      return new THREE.Vector3(38.8, 0.10, 4.6);
-    }
-    if (sp < 0.16) {
-      return new THREE.Vector3(-42, 0.10, 7.8);
-    }
-    const tourT = Math.max(0, Math.min(1, (sp - 0.2) / 0.66));
-    const guideX = -40 + tourT * 80;
-    return new THREE.Vector3(guideX, 0.10, 7.8);
+
+    toAction.play();
+    currentActionRef.current = toAction;
   };
 
-  const initialPos = useMemo(() => computeTargetPos(scrollProgress, focusedBuildingIndex), []);
-  const isFirstFrame = useRef(true);
-  const currentPos = useRef(initialPos.clone());
-  const targetPos = useRef(initialPos.clone());
-  const currentRotY = useRef(0);
-  const manualWaveBoost = useRef(0);
-  const walkBlendRef = useRef(0);
+  // Play wave once, then transition to standing pose
+  const playWaveOnce = () => {
+    const waveAction = actionsRef.current.wave;
+    if (!waveAction) return;
 
-  const handleWave = () => {
-    manualWaveBoost.current = 2.6;
+    hostStateRef.current = 'WAVING';
+    waveAction.reset();
+    waveAction.setLoop(THREE.LoopOnce, 1);
+    waveAction.clampWhenFinished = true;
+    waveAction.paused = false;
+    waveTimerRef.current = 0;
+    crossfadeToAction(waveAction, CROSSFADE_DURATION);
+  };
+
+  const handleWaveClick = () => {
+    playWaveOnce();
     showToast("Aditya waves hi! 👋 Pick any of the 5 buildings to explore together!");
   };
 
-  useFrame(() => {
-    // 1. Escort Pathfinding Logic
-    const nextTarget = computeTargetPos(scrollProgress, focusedBuildingIndex);
-    targetPos.current.copy(nextTarget);
+  // ── Load FBX Avatar & Animations in Parallel ───────────────────────────────
+  useEffect(() => {
+    let isMounted = true;
+    const manager = new THREE.LoadingManager();
 
-    // Direct snap on initial frame or deep link
+    // Fast loading modifier: skip heavy embedded texture decompression
+    const transparentPixel =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    manager.setURLModifier((url) => {
+      if (
+        url.startsWith('blob:') ||
+        url.match(/\.(png|jpg|jpeg|tga|bmp|tif|tiff)(\?.*)?$/i) ||
+        url.includes('.fbm')
+      ) {
+        return transparentPixel;
+      }
+      return url;
+    });
+
+    const loader = new FBXLoader(manager);
+
+    const loadFBXPromise = (url: string): Promise<THREE.Group> => {
+      return new Promise((resolve, reject) => {
+        loader.load(url, resolve, undefined, reject);
+      });
+    };
+
+    // Parallel load of Walking.fbx, Waving.fbx, and optional Idle.fbx
+    Promise.all([
+      loadFBXPromise('/animations/Walking.fbx'),
+      loadFBXPromise('/animations/Waving.fbx'),
+      loadFBXPromise('/animations/Idle.fbx').catch(() => null),
+    ])
+      .then(([walkingFbx, wavingFbx, idleFbx]) => {
+        if (!isMounted) return;
+
+        // Measure raw model height & scale precisely to 1.75m tall
+        const rawBox = new THREE.Box3().setFromObject(walkingFbx);
+        const rawHeight = rawBox.max.y - rawBox.min.y;
+        const targetHeight = 1.75;
+        const scaleFactor = targetHeight / (rawHeight || 179.27);
+        walkingFbx.scale.setScalar(scaleFactor);
+
+        // Center X & Z, and place feet exactly at local Y = 0
+        const scaledBox = new THREE.Box3().setFromObject(walkingFbx);
+        const scaledCenter = new THREE.Vector3();
+        scaledBox.getCenter(scaledCenter);
+        walkingFbx.position.set(-scaledCenter.x, -scaledBox.min.y, -scaledCenter.z);
+
+        // Apply clean tailored materials and shadow casting
+        applyAvatarMaterials(walkingFbx);
+
+        // 1. Prepare Walking animation clip: remove X/Z forward root motion so it walks in place
+        const walkClipRaw = walkingFbx.animations[0];
+        const walkClip = walkClipRaw ? walkClipRaw.clone() : new THREE.AnimationClip('Walk', 0, []);
+        walkClip.name = 'Walk';
+
+        walkClip.tracks.forEach((track) => {
+          if (track.name.toLowerCase().endsWith('hips.position')) {
+            const vals = track.values;
+            const x0 = vals[0];
+            const z0 = vals[2];
+            for (let i = 0; i < vals.length; i += 3) {
+              vals[i] = x0;
+              vals[i + 2] = z0;
+            }
+          }
+        });
+
+        // 2. Prepare Waving clip
+        const waveClipRaw = wavingFbx.animations[0];
+        const waveClip = waveClipRaw ? waveClipRaw.clone() : new THREE.AnimationClip('Wave', 0, []);
+        waveClip.name = 'Wave';
+
+        // Initialize Animation Mixer on the avatar
+        const mixer = new THREE.AnimationMixer(walkingFbx);
+
+        const walkAction = mixer.clipAction(walkClip);
+        walkAction.setLoop(THREE.LoopRepeat, Infinity);
+        walkAction.setEffectiveTimeScale(1);
+
+        const waveAction = mixer.clipAction(waveClip);
+        waveAction.setLoop(THREE.LoopOnce, 1);
+        waveAction.clampWhenFinished = true;
+
+        actionsRef.current.walk = walkAction;
+        actionsRef.current.wave = waveAction;
+
+        // 3. Optional Idle clip if present
+        if (idleFbx && idleFbx.animations[0]) {
+          const idleClip = idleFbx.animations[0].clone();
+          idleClip.name = 'Idle';
+          const idleAction = mixer.clipAction(idleClip);
+          idleAction.setLoop(THREE.LoopRepeat, Infinity);
+          actionsRef.current.idle = idleAction;
+        }
+
+        // Listen for wave completion: transition to holding standing pose
+        mixer.addEventListener('finished', (e: any) => {
+          if (e.action === actionsRef.current.wave) {
+            hostStateRef.current = 'STANDING';
+            if (actionsRef.current.idle) {
+              crossfadeToAction(actionsRef.current.idle, CROSSFADE_DURATION);
+            } else if (actionsRef.current.wave) {
+              actionsRef.current.wave.paused = true;
+            }
+          }
+        });
+
+        // Start playing Wave immediately so avatar never renders in T-pose
+        hostStateRef.current = 'WAVING';
+        currentActionRef.current = waveAction;
+        waveAction.play();
+
+        // Advance mixer 1 frame to immediately evaluate bind-to-pose deformation
+        mixer.update(0.016);
+
+        mixerRef.current = mixer;
+        setAvatarGroup(walkingFbx);
+      })
+      .catch((err) => {
+        console.warn('[HostCharacter] Failed to load animation files, site will continue without host:', err);
+        if (isMounted) setLoadError(true);
+      });
+
+    return () => {
+      isMounted = false;
+      if (mixerRef.current) {
+        mixerRef.current.stopAllAction();
+      }
+    };
+  }, []);
+
+  // ── Frame Loop: Waypoint Navigation, Stride Physics & State Transitions ────
+  useFrame((_, delta) => {
+    const clampedDelta = Math.min(delta, 0.05);
+
+    if (mixerRef.current) {
+      mixerRef.current.update(clampedDelta);
+    }
+
+    if (typeof window !== 'undefined') {
+      (window as any).__HOST_DEBUG__ = {
+        hasAvatar: !!avatarGroup,
+        hasMixer: !!mixerRef.current,
+        hasWalkAction: !!actionsRef.current.walk,
+        hasWaveAction: !!actionsRef.current.wave,
+        walkRunning: actionsRef.current.walk ? actionsRef.current.walk.isRunning() : false,
+        waveRunning: actionsRef.current.wave ? actionsRef.current.wave.isRunning() : false,
+        state: hostStateRef.current,
+        currentPos: currentPos.current.toArray(),
+        activeTarget: activeWaypointTarget.current.toArray(),
+        scrollProgress,
+        focusedBuildingIndex,
+      };
+    }
+
+    if (!avatarGroup || !rootRef.current) return;
+
+    // 1. Determine destination stop
+    const targetStop = getActiveTarget(scrollProgress, focusedBuildingIndex);
+
+    // Initial load frame snap
     if (isFirstFrame.current) {
-      currentPos.current.copy(targetPos.current);
-      isFirstFrame.current = false;
-    }
-
-    // Velocity & Stride
-    const dx = targetPos.current.x - currentPos.current.x;
-    const dz = targetPos.current.z - currentPos.current.z;
-    const dist = Math.hypot(dx, dz);
-    const moveLerp = focusedBuildingIndex !== null ? 0.085 : 0.095;
-    currentPos.current.lerp(targetPos.current, moveLerp);
-
-    if (rootRef.current) {
+      currentPos.current.copy(targetStop);
+      activeWaypointTarget.current.copy(targetStop);
+      finalStopTarget.current.copy(targetStop);
       rootRef.current.position.copy(currentPos.current);
+      isFirstFrame.current = false;
+      return;
     }
 
-    const walkBlend = Math.min(1, dist * 0.65);
-    walkBlendRef.current = walkBlend;
+    // Instant Skip Handling: if jumping straight to Hub overview, snap to Hub
+    if (scrollProgress > 0.95 && currentPos.current.distanceTo(HOST_HUB_STOP) > 20.0) {
+      currentPos.current.copy(HOST_HUB_STOP);
+      activeWaypointTarget.current.copy(HOST_HUB_STOP);
+      finalStopTarget.current.copy(HOST_HUB_STOP);
+      rootRef.current.position.copy(currentPos.current);
+      playWaveOnce();
+      return;
+    }
 
-    // Smooth rotation facing movement or camera
-    let desiredYaw = 0;
-    if (walkBlend > 0.18) {
-      desiredYaw = Math.atan2(dx, dz);
+    // 2. Compute Sidewalk Waypoint Path
+    // If moving between North Sidewalk (Z ~ -10) and South Pavement Hub (Z ~ 4.6),
+    // route through the crosswalk corner waypoint at X = 38.0, Z = -10.0
+    finalStopTarget.current.copy(targetStop);
+    const isGoingToHub = targetStop.z > 0;
+    const isCurrentlyOnNorthSidewalk = currentPos.current.z < -2.0;
+
+    if (isGoingToHub && isCurrentlyOnNorthSidewalk) {
+      const distToCorner = Math.hypot(
+        CROSSWALK_NORTH_CORNER.x - currentPos.current.x,
+        CROSSWALK_NORTH_CORNER.z - currentPos.current.z
+      );
+      if (distToCorner > 1.2) {
+        activeWaypointTarget.current.copy(CROSSWALK_NORTH_CORNER);
+      } else {
+        activeWaypointTarget.current.copy(HOST_HUB_STOP);
+      }
     } else {
+      activeWaypointTarget.current.copy(targetStop);
+    }
+
+    // 3. Distance & Speed Calculations
+    const dx = activeWaypointTarget.current.x - currentPos.current.x;
+    const dz = activeWaypointTarget.current.z - currentPos.current.z;
+    const distToActive = Math.hypot(dx, dz);
+
+    const finalDx = finalStopTarget.current.x - currentPos.current.x;
+    const finalDz = finalStopTarget.current.z - currentPos.current.z;
+    const distToFinal = Math.hypot(finalDx, finalDz);
+
+    const hasReachedStop = distToFinal <= STOP_DISTANCE_THRESHOLD;
+
+    // 4. State Machine: WALKING vs. WAVING vs. STANDING
+    if (!hasReachedStop) {
+      // Target changed or not at destination: Host is WALKING
+      if (hostStateRef.current !== 'WALKING') {
+        hostStateRef.current = 'WALKING';
+        crossfadeToAction(actionsRef.current.walk, CROSSFADE_DURATION);
+      }
+
+      // Dynamic Speed Regulation:
+      // Base speed 1.68 m/s; smoothly accelerates if camera scrolls fast, eases near stop
+      let moveSpeed = BASE_WALK_SPEED;
+      if (distToActive < 1.0) {
+        moveSpeed = BASE_WALK_SPEED * Math.max(0.35, distToActive / 1.0);
+      } else if (distToActive > 4.5) {
+        moveSpeed = BASE_WALK_SPEED * Math.min(2.2, 1.0 + (distToActive - 4.5) * 0.12);
+      }
+
+      // Zero-Slip Stride Matching:
+      // Modulation of animation timeScale ensures foot plant speed exactly equals ground speed
+      if (actionsRef.current.walk) {
+        actionsRef.current.walk.setEffectiveTimeScale(moveSpeed / BASE_WALK_SPEED);
+      }
+
+      // Advance position along waypoint vector
+      const stepDist = Math.min(distToActive, moveSpeed * clampedDelta);
+      currentPos.current.x += (dx / distToActive) * stepDist;
+      currentPos.current.z += (dz / distToActive) * stepDist;
+      currentPos.current.y = THREE.MathUtils.lerp(currentPos.current.y, activeWaypointTarget.current.y, 0.12);
+
+      // Smoothly rotate to face direction of movement
+      const moveYaw = Math.atan2(dx, dz);
+      let angleDiff = moveYaw - currentYaw.current;
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+      currentYaw.current += angleDiff * Math.min(1.0, 10.0 * clampedDelta);
+    } else {
+      // Host has reached the stop!
+      if (hostStateRef.current === 'WALKING') {
+        playWaveOnce();
+      }
+
+      // Height alignment with pavement
+      currentPos.current.y = THREE.MathUtils.lerp(currentPos.current.y, finalStopTarget.current.y, 0.2);
+
+      // Smoothly turn to face the user camera
       const camDx = camera.position.x - currentPos.current.x;
       const camDz = camera.position.z - currentPos.current.z;
-      desiredYaw = Math.atan2(camDx, camDz);
+      const camYaw = Math.atan2(camDx, camDz);
+
+      let angleDiff = camYaw - currentYaw.current;
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+      currentYaw.current += angleDiff * Math.min(1.0, 6.0 * clampedDelta);
+
+      // Fallback timer in case finished event was delayed
+      if (hostStateRef.current === 'WAVING') {
+        waveTimerRef.current += clampedDelta;
+        if (waveTimerRef.current > 4.8) {
+          hostStateRef.current = 'STANDING';
+          if (actionsRef.current.idle) {
+            crossfadeToAction(actionsRef.current.idle, CROSSFADE_DURATION);
+          } else if (actionsRef.current.wave) {
+            actionsRef.current.wave.paused = true;
+          }
+        }
+      }
     }
 
-    let angleDiff = desiredYaw - currentRotY.current;
-    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-    currentRotY.current += angleDiff * 0.14;
-
-    if (rootRef.current) {
-      rootRef.current.rotation.y = currentRotY.current;
-    }
-
-    // Decay manual wave boost
-    if (manualWaveBoost.current > 0) {
-      manualWaveBoost.current = Math.max(0, manualWaveBoost.current - 0.025);
-    }
+    // Apply transformed position and rotation to group
+    rootRef.current.position.copy(currentPos.current);
+    rootRef.current.rotation.y = currentYaw.current;
   });
 
-  const isWaving =
-    focusedBuildingIndex !== null || scrollProgress > 0.88 || scrollProgress < 0.18;
+  if (loadError) {
+    return null;
+  }
 
   return (
-    <group ref={rootRef} position={[initialPos.x, initialPos.y, initialPos.z]} scale={useOldCity ? 1.38 : 1.0}>
-      {useOldCity ? (
-        <ProceduralAvatar
-          walkBlendRef={walkBlendRef}
-          manualWaveBoostRef={manualWaveBoost}
-          isWaving={isWaving}
-          onWaveClick={handleWave}
-        />
-      ) : (
-        <SketchfabHostAvatar
-          walkBlend={walkBlendRef.current}
-          manualWaveBoost={manualWaveBoost.current}
-          isWaving={isWaving}
-          onWaveClick={handleWave}
-        />
+    <group ref={rootRef} position={[initialPos.x, initialPos.y, initialPos.z]}>
+      {avatarGroup && (
+        <group
+          onClick={(e) => {
+            e.stopPropagation();
+            handleWaveClick();
+          }}
+          onPointerOver={(e) => {
+            e.stopPropagation();
+            document.body.style.cursor = 'pointer';
+          }}
+          onPointerOut={() => {
+            document.body.style.cursor = 'default';
+          }}
+        >
+          {/* Scaled FBX Mesh Object */}
+          <primitive object={avatarGroup} />
+
+          {/* Interactive Ground Contact Glow Ring */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+            <ringGeometry args={[0.55, 0.72, 32]} />
+            <meshBasicMaterial color={0xfbbf24} side={THREE.DoubleSide} transparent opacity={0.55} />
+          </mesh>
+
+          {/* Soft Ground Contact Shadow Disc */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
+            <ringGeometry args={[0.02, 0.48, 32]} />
+            <meshBasicMaterial color="#000000" transparent opacity={0.35} depthWrite={false} />
+          </mesh>
+        </group>
       )}
 
-      {/* Floating 3D Speech Bubble attached directly above Aditya's avatar */}
-      <SpeechBubble
-        position={[0, 1.95, 0]}
-        onWaveClick={handleWave}
-      />
+      {/* 3D Speech Bubble anchored directly above host's head (head height ~ 1.75m) */}
+      <SpeechBubble position={[0, 2.05, 0]} onWaveClick={handleWaveClick} />
     </group>
   );
 };
