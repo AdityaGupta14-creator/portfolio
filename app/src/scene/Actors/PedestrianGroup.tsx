@@ -35,7 +35,8 @@ type PedestrianBehaviorState =
   | 'pausing'
   | 'approach_kerb'
   | 'wait'
-  | 'cross';
+  | 'cross'
+  | 'greet';
 
 interface WalkerRuntime {
   id: number;
@@ -66,6 +67,13 @@ interface WalkerRuntime {
     threatCarDist: number;
     safeDist: number;
   } | null;
+
+  // Greeting behavior
+  greetPartnerId: number | null;
+  greetTimer: number;
+  greetCooldown: number;
+  isWaving: boolean;
+  movedAsideForFollower: boolean;
 }
 
 interface PedestrianInstance {
@@ -74,6 +82,7 @@ interface PedestrianInstance {
   mixer: THREE.AnimationMixer;
   walkAction: THREE.AnimationAction;
   standAction?: THREE.AnimationAction;
+  waveAction?: THREE.AnimationAction;
   shadowMesh: THREE.Mesh;
 }
 
@@ -136,6 +145,34 @@ function applyClonedMaterials(avatar: THREE.Object3D, config: PedestrianInitConf
   });
 }
 
+/**
+ * Checks if someone is walking closely behind a pedestrian, and shifts lateral offset
+ * so they don't block the walkway when slowing down for a greeting.
+ */
+function checkFollowerAndMoveAside(rt: WalkerRuntime, allRuntimes: WalkerRuntime[]) {
+  let hasFollower = false;
+  for (const other of allRuntimes) {
+    if (other.id === rt.id) continue;
+    if (other.dir !== rt.dir) continue;
+    if (other.lane.side !== rt.lane.side) continue;
+
+    // Follower is behind rt along travel direction
+    const behindDist = (rt.x - other.x) * rt.dir;
+    const latDist = Math.abs(other.z - rt.z);
+    if (behindDist > 0 && behindDist < 2.5 && latDist < 1.0) {
+      hasFollower = true;
+      break;
+    }
+  }
+
+  if (hasFollower) {
+    // Move aside slightly toward the edge of their sidewalk lane
+    const edgeSign = rt.lane.subLane === 'near-building' ? -1 : 1;
+    rt.targetLateralOffset = edgeSign * 0.35;
+    rt.movedAsideForFollower = true;
+  }
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 //  MIXAMO WALKING PEDESTRIANS WITH ROAD CROSSING & DYNAMIC CAR AVOIDANCE
 // ═════════════════════════════════════════════════════════════════════════════
@@ -183,10 +220,16 @@ const MixamoWalkingPedestrians: React.FC = () => {
         crossingDirZ: lane.side === 'north' ? 1 : -1,
         waitTimer: 0,
         gapCheckInfo: null,
+        greetPartnerId: null,
+        greetTimer: 0,
+        greetCooldown: 0,
+        isWaving: false,
+        movedAsideForFollower: false,
       };
     })
   );
 
+  const pairEncounterSetRef = useRef<Set<string>>(new Set());
   const hostPosRef = useRef<THREE.Vector3>(new THREE.Vector3(-40.27, RAW_BOUNDS.pavementY, -10.0));
   const debugTickRef = useRef<number>(0);
 
@@ -244,9 +287,12 @@ const MixamoWalkingPedestrians: React.FC = () => {
           }
         });
 
-        // Prepare optional standing pose from wave clip
+        // Prepare optional standing pose and waving action from wave clip
         const standClip = wavingFbx && wavingFbx.animations[0] ? wavingFbx.animations[0].clone() : null;
         if (standClip) standClip.name = 'Stand';
+
+        const waveClip = wavingFbx && wavingFbx.animations[0] ? wavingFbx.animations[0].clone() : null;
+        if (waveClip) waveClip.name = 'Wave';
 
         const spawned: PedestrianInstance[] = PEDESTRIAN_CONFIGS.map((config) => {
           const lane = SIDEWALK_LANES[config.laneKey];
@@ -279,6 +325,13 @@ const MixamoWalkingPedestrians: React.FC = () => {
             standAction.clampWhenFinished = true;
           }
 
+          let waveAction: THREE.AnimationAction | undefined = undefined;
+          if (waveClip) {
+            waveAction = mixer.clipAction(waveClip);
+            waveAction.setLoop(THREE.LoopOnce, 1);
+            waveAction.clampWhenFinished = true;
+          }
+
           mixer.update(0.016);
 
           const shadowMesh = new THREE.Mesh(
@@ -305,6 +358,7 @@ const MixamoWalkingPedestrians: React.FC = () => {
             mixer,
             walkAction,
             standAction,
+            waveAction,
             shadowMesh,
           };
         });
@@ -355,8 +409,38 @@ const MixamoWalkingPedestrians: React.FC = () => {
       const cfg = rt.config;
       const lane = rt.lane;
 
+      // Update greeting cooldown
+      if (rt.greetCooldown > 0) {
+        rt.greetCooldown = Math.max(0, rt.greetCooldown - clampedDelta);
+      }
+
+      // ── STATE 0: GREET (Friendly encounter between oncoming pedestrians) ───
+      if (rt.state === 'greet') {
+        rt.greetTimer -= clampedDelta;
+
+        // Slow smooth advance along sidewalk
+        rt.x += rt.currentSpeed * rt.dir * clampedDelta;
+
+        // Lateral offset transition (e.g. moving aside slightly for follower behind)
+        const offsetDiff = rt.targetLateralOffset - rt.lateralOffset;
+        const maxDeltaOffset = AVOIDANCE_CONFIG.lateralSteerRate * clampedDelta;
+        rt.lateralOffset += Math.sign(offsetDiff) * Math.min(Math.abs(offsetDiff), maxDeltaOffset);
+        rt.z = THREE.MathUtils.clamp(rt.baseZ + rt.lateralOffset, lane.minZ, lane.maxZ);
+        rt.y = lane.pavementY;
+
+        if (rt.greetTimer <= 0) {
+          // Greeting complete! Resume walking and pass each other using avoidance
+          rt.state = 'walking';
+          rt.targetSpeed = cfg.cruiseSpeed;
+          rt.targetYaw = rt.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+          rt.targetLateralOffset = 0;
+          rt.greetPartnerId = null;
+          rt.movedAsideForFollower = false;
+        }
+      }
+
       // ── STATE 1: APPROACH_KERB ─────────────────────────────────────────────
-      if (rt.state === 'approach_kerb') {
+      else if (rt.state === 'approach_kerb') {
         const cw = rt.targetCrosswalk!;
         const waitingPoint =
           rt.crossingDirZ > 0 ? cw.northWaitingPoint : cw.southWaitingPoint;
@@ -530,6 +614,100 @@ const MixamoWalkingPedestrians: React.FC = () => {
           continue;
         }
 
+        // Check greeting opportunity with oncoming pedestrians (2.5m, 25% chance, 20s cooldown)
+        if (rt.state === 'walking' || rt.state === 'avoiding') {
+          for (let j = 0; j < instances.length; j++) {
+            if (j === i) continue;
+            const other = runtimes[j];
+            if (other.dir === rt.dir) continue;
+            if (other.lane.side !== rt.lane.side) continue;
+            if (
+              other.state === 'approach_kerb' ||
+              other.state === 'wait' ||
+              other.state === 'cross' ||
+              other.state === 'greet' ||
+              other.state === 'turning'
+            ) {
+              continue;
+            }
+
+            const dxTowards = (other.x - rt.x) * rt.dir;
+            const meetDist = Math.hypot(other.x - rt.x, other.z - rt.z);
+            const pairKey = Math.min(rt.id, other.id) + '-' + Math.max(rt.id, other.id);
+
+            // Clean up pairKey when they pass and separate (> 4.0m)
+            if (meetDist > 4.0) {
+              pairEncounterSetRef.current.delete(pairKey);
+            }
+
+            // Within 2.5m and approaching each other
+            if (meetDist <= 2.5 && dxTowards > 0) {
+              if (!pairEncounterSetRef.current.has(pairKey)) {
+                pairEncounterSetRef.current.add(pairKey);
+
+                if (rt.greetCooldown <= 0 && other.greetCooldown <= 0) {
+                  // Requirement 3: Never greet while crossing road, waiting at kerb, or when a car is close (< 3.8m lateral)
+                  const cars = crosswalkManager.getCars();
+                  const carClose = cars.some(
+                    (c) => Math.abs(c.x - rt.x) < 12.0 && Math.abs(c.z - rt.z) < 3.8
+                  );
+
+                  if (!carClose) {
+                    const isForceGreet =
+                      typeof window !== 'undefined' &&
+                      (new URLSearchParams(window.location.search).has('greet') ||
+                        new URLSearchParams(window.location.search).has('debuggreet'));
+
+                    // 25% chance (random, once per pair, 20s cooldown)
+                    if (isForceGreet || Math.random() < 0.25) {
+                      const greetDuration = 1.8 + Math.random() * 0.7; // 1.8 to 2.5s
+
+                      // One or both play Waving clip once (~50% both, 25% p1, 25% p2)
+                      const waveRoll = Math.random();
+                      const rtWaves = waveRoll < 0.75;
+                      const otherWaves = waveRoll > 0.25;
+
+                      // Requirement 2: Check follower behind and move aside a little first
+                      checkFollowerAndMoveAside(rt, runtimes);
+                      checkFollowerAndMoveAside(other, runtimes);
+
+                      rt.state = 'greet';
+                      other.state = 'greet';
+                      rt.greetPartnerId = other.id;
+                      other.greetPartnerId = rt.id;
+                      rt.greetTimer = greetDuration;
+                      other.greetTimer = greetDuration;
+                      rt.greetCooldown = 20.0;
+                      other.greetCooldown = 20.0;
+                      rt.isWaving = rtWaves;
+                      other.isWaving = otherWaves;
+
+                      // Turn heads/bodies about 30 degrees towards each other (30 deg = PI / 6)
+                      const dzRt = other.z - rt.z;
+                      const turnSignRt = (dzRt * rt.dir) > 0 ? 1 : -1;
+                      rt.targetYaw =
+                        (rt.dir > 0 ? Math.PI / 2 : -Math.PI / 2) + turnSignRt * (Math.PI / 6);
+
+                      const dzOther = rt.z - other.z;
+                      const turnSignOther = (dzOther * other.dir) > 0 ? 1 : -1;
+                      other.targetYaw =
+                        (other.dir > 0 ? Math.PI / 2 : -Math.PI / 2) +
+                        turnSignOther * (Math.PI / 6);
+
+                      // Both slow down smoothly
+                      rt.targetSpeed = Math.max(0.25, cfg.cruiseSpeed * 0.25);
+                      other.targetSpeed = Math.max(0.25, other.config.cruiseSpeed * 0.25);
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          if (rt.state === 'greet') continue;
+        }
+
         // Look-ahead avoidance scanning
         let closestThreatDist = Infinity;
         let threatLateralDiff = 0;
@@ -672,18 +850,36 @@ const MixamoWalkingPedestrians: React.FC = () => {
       const isNearCamera = distToCamera < 85;
 
       if (isNearCamera) {
-        const effectiveTimeScale = calculateWalkTimeScale(rt.currentSpeed, cfg.heightMult);
-        inst.walkAction.setEffectiveTimeScale(effectiveTimeScale);
-
-        if (rt.currentSpeed <= 0.04) {
-          if (inst.standAction && inst.walkAction.isRunning()) {
-            inst.walkAction.crossFadeTo(inst.standAction, 0.25, true);
-            inst.standAction.reset().play();
+        if (rt.state === 'greet') {
+          if (rt.isWaving && inst.waveAction) {
+            if (!inst.waveAction.isRunning()) {
+              inst.walkAction.crossFadeTo(inst.waveAction, 0.3, true);
+              inst.waveAction.reset().play();
+            }
+          } else {
+            const effectiveTimeScale = calculateWalkTimeScale(rt.currentSpeed, cfg.heightMult);
+            inst.walkAction.setEffectiveTimeScale(effectiveTimeScale);
           }
         } else {
-          if (inst.standAction && inst.standAction.isRunning()) {
-            inst.standAction.crossFadeTo(inst.walkAction, 0.25, true);
+          // If waveAction is still running, crossfade back into walkAction in 0.3s
+          if (inst.waveAction && inst.waveAction.isRunning()) {
+            inst.waveAction.crossFadeTo(inst.walkAction, 0.3, true);
             inst.walkAction.play();
+          }
+
+          const effectiveTimeScale = calculateWalkTimeScale(rt.currentSpeed, cfg.heightMult);
+          inst.walkAction.setEffectiveTimeScale(effectiveTimeScale);
+
+          if (rt.currentSpeed <= 0.04) {
+            if (inst.standAction && inst.walkAction.isRunning()) {
+              inst.walkAction.crossFadeTo(inst.standAction, 0.25, true);
+              inst.standAction.reset().play();
+            }
+          } else {
+            if (inst.standAction && inst.standAction.isRunning()) {
+              inst.standAction.crossFadeTo(inst.walkAction, 0.25, true);
+              inst.walkAction.play();
+            }
           }
         }
 
@@ -739,9 +935,12 @@ function createDebugLabelTexture(rt: WalkerRuntime): THREE.CanvasTexture {
   const isThreat = rt.threatId !== null;
   const isWait = rt.state === 'wait';
   const isCross = rt.state === 'cross';
+  const isGreet = rt.state === 'greet';
 
   // Card background styling
-  if (isWait) {
+  if (isGreet) {
+    ctx.fillStyle = 'rgba(147, 51, 234, 0.95)'; // Vibrant Purple for GREET
+  } else if (isWait) {
     ctx.fillStyle = rt.gapCheckInfo?.safe
       ? 'rgba(16, 185, 129, 0.92)' // Green when safe
       : 'rgba(217, 119, 6, 0.92)';  // Amber when waiting for car
@@ -753,7 +952,7 @@ function createDebugLabelTexture(rt: WalkerRuntime): THREE.CanvasTexture {
     ctx.fillStyle = 'rgba(15, 23, 42, 0.90)';  // Slate default
   }
 
-  ctx.strokeStyle = isWait ? '#fef08a' : (isCross ? '#a5b4fc' : '#38bdf8');
+  ctx.strokeStyle = isGreet ? '#e9d5ff' : (isWait ? '#fef08a' : (isCross ? '#a5b4fc' : '#38bdf8'));
   ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.roundRect(8, 8, canvas.width - 16, canvas.height - 16, 20);
@@ -770,7 +969,11 @@ function createDebugLabelTexture(rt: WalkerRuntime): THREE.CanvasTexture {
   ctx.fillStyle = '#f8fafc';
   ctx.font = '24px monospace';
 
-  if (isWait) {
+  if (isGreet) {
+    ctx.fillText(`Greeting PED #${rt.greetPartnerId} (${rt.isWaving ? 'Waving' : 'Nodding'})`, canvas.width / 2, 92);
+    ctx.fillStyle = '#f3e8ff';
+    ctx.fillText(`Timer: ${rt.greetTimer.toFixed(1)}s | Head Turn: ~30°`, canvas.width / 2, 136);
+  } else if (isWait) {
     const gap = rt.gapCheckInfo;
     ctx.fillText(`Kerb Wait: ${gap?.safe ? 'GAP SAFE' : 'CAR PASSING'}`, canvas.width / 2, 92);
     if (gap && !gap.safe) {
@@ -908,20 +1111,35 @@ const PedestrianDebugOverlay: React.FC<DebugOverlayProps> = ({ runtimes }) => {
             >
               <ringGeometry args={[0.33, 0.35, 32]} />
               <meshBasicMaterial
-                color={rt.state === 'wait' ? '#f59e0b' : (rt.state === 'cross' ? '#818cf8' : (isTriggered ? '#ef4444' : '#06b6d4'))}
+                color={rt.state === 'greet' ? '#c084fc' : (rt.state === 'wait' ? '#f59e0b' : (rt.state === 'cross' ? '#818cf8' : (isTriggered ? '#ef4444' : '#06b6d4')))}
                 side={THREE.DoubleSide}
               />
             </mesh>
 
             {/* Look-Ahead Vector Line (while walking) */}
-            {rt.state !== 'wait' && <primitive object={lookAheadLine} />}
+            {rt.state !== 'wait' && rt.state !== 'greet' && <primitive object={lookAheadLine} />}
 
             {/* Gap Check Line to Oncoming Car (while waiting at kerb) */}
             {gapLine && <primitive object={gapLine} />}
 
+            {/* Greeting Connection Ray between Partners */}
+            {rt.state === 'greet' && rt.greetPartnerId !== null && rt.id < rt.greetPartnerId && (() => {
+              const partner = runtimes.find((p) => p.id === rt.greetPartnerId);
+              if (partner) {
+                const pts = [
+                  new THREE.Vector3(rt.x, rt.y + 1.2, rt.z),
+                  new THREE.Vector3(partner.x, partner.y + 1.2, partner.z),
+                ];
+                const geom = new THREE.BufferGeometry().setFromPoints(pts);
+                const mat = new THREE.LineBasicMaterial({ color: 0xc084fc, linewidth: 3, depthTest: false });
+                return <primitive key={`greet-${rt.id}-${partner.id}`} object={new THREE.Line(geom, mat)} />;
+              }
+              return null;
+            })()}
+
             {/* Floating State & Telemetry Sprite Billboard */}
             <sprite
-              position={[rt.x, rt.y + 2.3, rt.z]}
+              position={[rt.x, rt.y + 2.3 + (rt.id % 2 === 0 ? 0.45 : 0), rt.z]}
               scale={[2.5, 1.05, 1.0]}
             >
               <spriteMaterial

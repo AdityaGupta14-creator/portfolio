@@ -167,6 +167,12 @@ export const CameraController: React.FC = () => {
     return p.has('cw') || p.get('view') === 'crosswalk';
   }, []);
 
+  const isGreetOverview = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    const p = new URLSearchParams(window.location.search);
+    return p.has('greet') || p.get('view') === 'greet';
+  }, []);
+
   useFrame(() => {
     if (isTopDownDebug) {
       // Dev-only top-down debug view (Press B)
@@ -186,6 +192,12 @@ export const CameraController: React.FC = () => {
       camera.position.set(6.5, 2.2, 5.8);
       camera.up.set(0, 1, 0);
       camera.lookAt(13.0, 1.2, -5.5);
+      return;
+    } else if (isGreetOverview) {
+      // Dev-only perspective framing pedestrians greeting on south promenade
+      camera.position.set(1.2, 1.85, 4.5);
+      camera.up.set(0, 1, 0);
+      camera.lookAt(4.8, 1.35, 8.7);
       return;
     } else {
       camera.up.set(0, 1, 0);

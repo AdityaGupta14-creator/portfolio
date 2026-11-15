@@ -21,13 +21,19 @@ export const SkyHeroOverlay: React.FC = () => {
     (new URLSearchParams(window.location.search).has('crosswalk') ||
       new URLSearchParams(window.location.search).get('view') === 'crosswalk');
 
-  // Strict mutual exclusivity: Only show when drawer is closed, scrollProgress < 0.11, not in top-down debug view, and not in signs/crosswalk overview
+  const isGreetOverview =
+    typeof window !== 'undefined' &&
+    (new URLSearchParams(window.location.search).has('greet') ||
+      new URLSearchParams(window.location.search).get('view') === 'greet');
+
+  // Strict mutual exclusivity: Only show when drawer is closed, scrollProgress < 0.11, not in top-down debug view, and not in signs/crosswalk/greet overview
   const isVisible =
     focusedBuildingIndex === null &&
     scrollProgress < 0.11 &&
     !isTopDownDebug &&
     !isSignsOverview &&
-    !isCrosswalkOverview;
+    !isCrosswalkOverview &&
+    !isGreetOverview;
 
   return (
     <AnimatePresence>
