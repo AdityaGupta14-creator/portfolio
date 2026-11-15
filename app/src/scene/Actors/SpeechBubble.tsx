@@ -3,19 +3,19 @@ import { Html } from '@react-three/drei';
 import { useAppStore } from '../../store/useAppStore';
 
 export const SpeechBubble: React.FC<{
-  position: [number, number, number];
+  position?: [number, number, number];
   onWaveClick: () => void;
-}> = ({ position, onWaveClick }) => {
+}> = ({ position = [0, 2.95, 0], onWaveClick }) => {
   const scrollProgress = useAppStore((s) => s.scrollProgress);
   const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
 
-  // In vanilla: Only visible when drawer is closed AND at Hub overview (> 0.88)
+  // Visible when drawer is closed AND at Hub overview (> 0.88)
   const isVisible = focusedBuildingIndex === null && scrollProgress > 0.88;
 
   if (!isVisible) return null;
 
   return (
-    <group position={[position[0], position[1] + 2.95, position[2]]}>
+    <group position={position}>
       <Html center zIndexRange={[24, 0]}>
         <div
           onClick={(e) => {

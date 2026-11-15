@@ -591,9 +591,27 @@ export const HostCharacter: React.FC = () => {
   const showToast = useAppStore((s) => s.showToast);
   const { camera } = useThree();
 
+  const computeTargetPos = (sp: number, fIdx: number | null): THREE.Vector3 => {
+    if (fIdx !== null) {
+      const b = PORTFOLIO_CONTENT.buildings[fIdx];
+      return new THREE.Vector3(b.xPos - 2.4, 0.16, useOldCity ? -7.8 : -11.5);
+    }
+    if (sp > 0.88) {
+      // Hub destination: standing on pavement at (38.8, 0.10, 4.6), 5-6m in front of hub camera (43.5, 1.70, 2.2)
+      return new THREE.Vector3(38.8, 0.10, 4.6);
+    }
+    if (sp < 0.16) {
+      return new THREE.Vector3(-48, 0.10, 7.8);
+    }
+    const tourT = Math.max(0, Math.min(1, (sp - 0.2) / 0.66));
+    const guideX = -50 + tourT * 102;
+    return new THREE.Vector3(guideX, 0.10, 7.8);
+  };
+
+  const initialPos = useMemo(() => computeTargetPos(scrollProgress, focusedBuildingIndex), []);
   const isFirstFrame = useRef(true);
-  const currentPos = useRef(new THREE.Vector3(-48, 0.10, 7.8));
-  const targetPos = useRef(new THREE.Vector3(-48, 0.10, 7.8));
+  const currentPos = useRef(initialPos.clone());
+  const targetPos = useRef(initialPos.clone());
   const currentRotY = useRef(0);
   const manualWaveBoost = useRef(0);
   const walkBlendRef = useRef(0);
@@ -605,19 +623,8 @@ export const HostCharacter: React.FC = () => {
 
   useFrame(() => {
     // 1. Escort Pathfinding Logic
-    if (focusedBuildingIndex !== null) {
-      const b = PORTFOLIO_CONTENT.buildings[focusedBuildingIndex];
-      targetPos.current.set(b.xPos - 2.4, 0.16, useOldCity ? -7.8 : -11.5);
-    } else if (scrollProgress > 0.88) {
-      targetPos.current.set(-7, 0.10, 22.5);
-    } else if (scrollProgress < 0.16) {
-      targetPos.current.set(-48, 0.10, 7.8);
-    } else {
-      // Guide visitor along the street promenade in view of current building
-      const tourT = Math.max(0, Math.min(1, (scrollProgress - 0.2) / 0.66));
-      const guideX = -50 + tourT * 102;
-      targetPos.current.set(guideX, 0.10, 7.8);
-    }
+    const nextTarget = computeTargetPos(scrollProgress, focusedBuildingIndex);
+    targetPos.current.copy(nextTarget);
 
     // Direct snap on initial frame or deep link
     if (isFirstFrame.current) {
@@ -668,30 +675,28 @@ export const HostCharacter: React.FC = () => {
     focusedBuildingIndex !== null || scrollProgress > 0.88 || scrollProgress < 0.18;
 
   return (
-    <>
-      <group ref={rootRef} position={[-48, 0.10, 7.8]} scale={useOldCity ? 1.38 : 1.0}>
-        {useOldCity ? (
-          <ProceduralAvatar
-            walkBlendRef={walkBlendRef}
-            manualWaveBoostRef={manualWaveBoost}
-            isWaving={isWaving}
-            onWaveClick={handleWave}
-          />
-        ) : (
-          <SketchfabHostAvatar
-            walkBlend={walkBlendRef.current}
-            manualWaveBoost={manualWaveBoost.current}
-            isWaving={isWaving}
-            onWaveClick={handleWave}
-          />
-        )}
-      </group>
+    <group ref={rootRef} position={[initialPos.x, initialPos.y, initialPos.z]} scale={useOldCity ? 1.38 : 1.0}>
+      {useOldCity ? (
+        <ProceduralAvatar
+          walkBlendRef={walkBlendRef}
+          manualWaveBoostRef={manualWaveBoost}
+          isWaving={isWaving}
+          onWaveClick={handleWave}
+        />
+      ) : (
+        <SketchfabHostAvatar
+          walkBlend={walkBlendRef.current}
+          manualWaveBoost={manualWaveBoost.current}
+          isWaving={isWaving}
+          onWaveClick={handleWave}
+        />
+      )}
 
-      {/* Floating 3D Speech Bubble above Aditya's avatar */}
+      {/* Floating 3D Speech Bubble attached directly above Aditya's avatar */}
       <SpeechBubble
-        position={[currentPos.current.x, currentPos.current.y, currentPos.current.z]}
+        position={[0, 1.95, 0]}
         onWaveClick={handleWave}
       />
-    </>
+    </group>
   );
 };
