@@ -12,6 +12,7 @@ import { BuildingDrawer } from './components/BuildingDrawer';
 import { ClassicView } from './components/ClassicView';
 import { Toast } from './components/Toast';
 import { AssetDebugPage } from './components/AssetDebugPage';
+import { AnimDebugPage } from './components/AnimDebugPage';
 
 export const App: React.FC = () => {
   const viewMode = useAppStore((s) => s.viewMode);
@@ -29,12 +30,27 @@ export const App: React.FC = () => {
     );
   });
 
+  // Check for /debug/anim route or query parameter (?debug=anim or #/debug/anim)
+  const [isDebugAnimRoute, setIsDebugAnimRoute] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      window.location.pathname.startsWith('/debug/anim') ||
+      window.location.search.includes('debug=anim') ||
+      window.location.hash.includes('/debug/anim')
+    );
+  });
+
   useEffect(() => {
     const checkRoute = () => {
       setIsDebugRoute(
         window.location.pathname.startsWith('/debug/assets') ||
           window.location.search.includes('debug=assets') ||
           window.location.hash.includes('/debug/assets')
+      );
+      setIsDebugAnimRoute(
+        window.location.pathname.startsWith('/debug/anim') ||
+          window.location.search.includes('debug=anim') ||
+          window.location.hash.includes('/debug/anim')
       );
     };
     window.addEventListener('popstate', checkRoute);
@@ -91,6 +107,11 @@ export const App: React.FC = () => {
   // Render developer asset test route
   if (isDebugRoute) {
     return <AssetDebugPage />;
+  }
+
+  // Render developer animation test route (/debug/anim)
+  if (isDebugAnimRoute) {
+    return <AnimDebugPage />;
   }
 
   return (
