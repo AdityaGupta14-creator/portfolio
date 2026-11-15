@@ -13,6 +13,7 @@ import { ClassicView } from './components/ClassicView';
 import { Toast } from './components/Toast';
 import { AssetDebugPage } from './components/AssetDebugPage';
 import { AnimDebugPage } from './components/AnimDebugPage';
+import { CarsDebugPage } from './components/CarsDebugPage';
 
 export const App: React.FC = () => {
   const viewMode = useAppStore((s) => s.viewMode);
@@ -40,6 +41,16 @@ export const App: React.FC = () => {
     );
   });
 
+  // Check for /debug/cars route or query parameter (?debug=cars or #/debug/cars)
+  const [isDebugCarsRoute, setIsDebugCarsRoute] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      window.location.pathname.startsWith('/debug/cars') ||
+      window.location.search.includes('debug=cars') ||
+      window.location.hash.includes('/debug/cars')
+    );
+  });
+
   useEffect(() => {
     const checkRoute = () => {
       setIsDebugRoute(
@@ -51,6 +62,11 @@ export const App: React.FC = () => {
         window.location.pathname.startsWith('/debug/anim') ||
           window.location.search.includes('debug=anim') ||
           window.location.hash.includes('/debug/anim')
+      );
+      setIsDebugCarsRoute(
+        window.location.pathname.startsWith('/debug/cars') ||
+          window.location.search.includes('debug=cars') ||
+          window.location.hash.includes('/debug/cars')
       );
     };
     window.addEventListener('popstate', checkRoute);
@@ -115,6 +131,11 @@ export const App: React.FC = () => {
   // Render developer animation test route (/debug/anim)
   if (isDebugAnimRoute) {
     return <AnimDebugPage />;
+  }
+
+  // Render developer cars test route (/debug/cars)
+  if (isDebugCarsRoute) {
+    return <CarsDebugPage />;
   }
 
   return (

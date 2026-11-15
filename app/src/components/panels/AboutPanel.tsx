@@ -55,6 +55,14 @@ export const AboutPanel: React.FC = () => {
           Crafting web environments where performance meets artistry—interactive 3D, responsive typography, and tactile UI feedback.
         </div>
       </div>
+
+      {/* 3D Model Attributions & Credits */}
+      <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-400 space-y-1.5 mt-2">
+        <div className="font-semibold text-slate-300 uppercase tracking-wider text-[11px]">3D Model Credits</div>
+        <div>
+          &ldquo;Generic passenger car pack&rdquo; by Comrade1280, CC BY 4.0, via Sketchfab.
+        </div>
+      </div>
     </div>
   );
 };
