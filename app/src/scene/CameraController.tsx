@@ -3,7 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useAppStore } from '../store/useAppStore';
 import { PORTFOLIO_CONTENT } from '../data/content';
-import { BUILDING_PROXIES } from '../data/buildings';
+import { BUILDING_PROXIES, RAW_BOUNDS } from '../data/buildings';
 
 interface Keyframe {
   p: number;
@@ -21,21 +21,21 @@ interface Keyframe {
 // 2. Hub overview camera: positioned in street at (44.0, 1.70, 2.0), looking down avenue at (0.0, 1.85, -2.5)
 //    Host stands at (39.0, 0.10, 5.6), 5-6m in front on pavement, framed in left/centre area away from right menu.
 const EYE_HEIGHT = 1.70;
-const FACADE_CLEARANCE = 16.0; // >= 4m from facade, perfectly in street center
 
 function computeKeyframes(): Keyframe[] {
+  const p101 = BUILDING_PROXIES[0];
   // Start with hero view in street looking down the avenue
   const frames: Keyframe[] = [
     {
       p: 0.0,
-      pos: new THREE.Vector3(-56.0, EYE_HEIGHT, 1.2),
-      look: new THREE.Vector3(-25.0, 1.95, -14.0),
+      pos: new THREE.Vector3(p101.xPos - 12.0, EYE_HEIGHT, 1.2),
+      look: new THREE.Vector3(p101.xPos + 18.0, 1.95, RAW_BOUNDS.northRowZ),
       name: 'Hero Street View',
     },
     {
       p: 0.14,
-      pos: new THREE.Vector3(-54.0, EYE_HEIGHT, 0.5),
-      look: new THREE.Vector3(-52.0, 2.0, -16.0),
+      pos: new THREE.Vector3(p101.xPos - 4.0, EYE_HEIGHT, 0.5),
+      look: new THREE.Vector3(p101.xPos, 2.0, RAW_BOUNDS.northRowZ),
       name: 'Approach Building 101',
     },
   ];
@@ -43,12 +43,12 @@ function computeKeyframes(): Keyframe[] {
   // Tour stops: computed dynamically from building proxies & bounding boxes
   const stopProgress = [0.28, 0.44, 0.58, 0.72, 0.86];
   BUILDING_PROXIES.forEach((proxy, idx) => {
-    const facadeZ = proxy.zPos + proxy.boxSize[2] / 2; // -19.2 + 3.0 = -16.2
-    const camZ = facadeZ + FACADE_CLEARANCE; // -16.2 + 16.0 = -0.2 (street center, >= 4m from facade)
+    // Street corridor is at Z = -0.8. Safe distance from facade at -13.4 is 12.6m (> 4m safe clearance)
+    const camZ = -0.8;
     frames.push({
       p: stopProgress[idx],
       pos: new THREE.Vector3(proxy.xPos, EYE_HEIGHT, camZ),
-      look: new THREE.Vector3(proxy.xPos, EYE_HEIGHT + 0.35, facadeZ),
+      look: new THREE.Vector3(proxy.xPos, EYE_HEIGHT + 0.35, proxy.zPos),
       name: `Building ${proxy.number} (${proxy.name})`,
     });
   });
@@ -84,6 +84,7 @@ export const CameraController: React.FC = () => {
   const scrollProgress = useAppStore((s) => s.scrollProgress);
   const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
   const closeBuildingModal = useAppStore((s) => s.closeBuildingModal);
+  const isTopDownDebug = useAppStore((s) => s.isTopDownDebug);
 
   const keyframes = useMemo(() => STATIC_KEYFRAMES, []);
 
@@ -146,12 +147,22 @@ export const CameraController: React.FC = () => {
   };
 
   useFrame(() => {
+    if (isTopDownDebug) {
+      // Dev-only top-down debug view (Press B)
+      camera.position.set(0, 115, RAW_BOUNDS.streetCenterZ);
+      camera.up.set(0, 0, -1); // Street runs along X (horizontal), North is UP (-Z), South is DOWN (+Z)
+      camera.lookAt(0, 0, RAW_BOUNDS.streetCenterZ);
+      return;
+    } else {
+      camera.up.set(0, 1, 0);
+    }
+
     if (focusedBuildingIndex !== null) {
       const b = PORTFOLIO_CONTENT.buildings[focusedBuildingIndex];
       const isMobile = window.innerWidth < 640;
-      // Focus mode stays safely in street corridor (Z = 0.5, >= 16m from facade)
-      targetCamPos.current.set(b.xPos + (isMobile ? 0 : 3.5), EYE_HEIGHT + 0.2, 0.5);
-      targetLookAt.current.set(b.xPos, EYE_HEIGHT + 0.35, -16.0);
+      // Focus mode stays safely in street corridor (Z = -0.8, >= 12.6m from facade)
+      targetCamPos.current.set(b.xPos + (isMobile ? 0 : 3.5), EYE_HEIGHT + 0.2, RAW_BOUNDS.streetCenterZ);
+      targetLookAt.current.set(b.xPos, EYE_HEIGHT + 0.35, RAW_BOUNDS.northRowZ);
     } else {
       computeScrollCamera(scrollProgress);
     }

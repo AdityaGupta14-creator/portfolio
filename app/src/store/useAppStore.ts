@@ -32,6 +32,10 @@ export interface AppState {
   isDebugMode: boolean;
   toggleDebugMode: () => void;
 
+  // Dev-only Top-Down Debug View (Press B)
+  isTopDownDebug: boolean;
+  toggleTopDownDebug: () => void;
+
   // Guided Tour & Building State
   currentBuilding: number | null; // Currently focused or nearest building (0..4, or null)
   tourStep: number;               // Current tour step (0..4)
@@ -179,6 +183,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       nextDebug
         ? '🛠️ Debug Mode: ON — Visualizing Sign Slots & Bounds'
         : '🛠️ Debug Mode: OFF'
+    );
+  },
+
+  // Dev-only Top-Down Debug View (Press B)
+  isTopDownDebug:
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).has('topdown') ||
+        new URLSearchParams(window.location.search).has('b')
+      : false,
+  toggleTopDownDebug: () => {
+    const nextTopDown = !get().isTopDownDebug;
+    set({ isTopDownDebug: nextTopDown });
+    get().showToast(
+      nextTopDown
+        ? '🗺️ Top-Down Debug View: ON (Press B to exit)'
+        : '🏙️ Street View: Restored'
     );
   },
 

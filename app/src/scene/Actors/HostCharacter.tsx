@@ -601,10 +601,10 @@ export const HostCharacter: React.FC = () => {
       return new THREE.Vector3(38.8, 0.10, 4.6);
     }
     if (sp < 0.16) {
-      return new THREE.Vector3(-48, 0.10, 7.8);
+      return new THREE.Vector3(-42, 0.10, 7.8);
     }
     const tourT = Math.max(0, Math.min(1, (sp - 0.2) / 0.66));
-    const guideX = -50 + tourT * 102;
+    const guideX = -40 + tourT * 80;
     return new THREE.Vector3(guideX, 0.10, 7.8);
   };
 

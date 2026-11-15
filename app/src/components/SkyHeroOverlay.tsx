@@ -9,9 +9,10 @@ export const SkyHeroOverlay: React.FC = () => {
   const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
   const startStreetTour = useAppStore((s) => s.startStreetTour);
   const goToHub = useAppStore((s) => s.goToHub);
+  const isTopDownDebug = useAppStore((s) => s.isTopDownDebug);
 
-  // Strict mutual exclusivity: Only show when drawer is closed and scrollProgress < 0.11
-  const isVisible = focusedBuildingIndex === null && scrollProgress < 0.11;
+  // Strict mutual exclusivity: Only show when drawer is closed, scrollProgress < 0.11, and not in top-down debug view
+  const isVisible = focusedBuildingIndex === null && scrollProgress < 0.11 && !isTopDownDebug;
 
   return (
     <AnimatePresence>

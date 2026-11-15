@@ -873,12 +873,12 @@ const SketchfabPedestrians: React.FC = () => {
       const b = PORTFOLIO_CONTENT.buildings[focusedBuildingIndex];
       hostPosRef.current.set(b.xPos - 2.3, 0.16, -11.5);
     } else if (scrollProgress > 0.88) {
-      hostPosRef.current.set(-7, 0.16, 22.5);
+      hostPosRef.current.set(38.8, 0.10, 4.6);
     } else if (scrollProgress < 0.16) {
-      hostPosRef.current.set(-48, 0.14, 7.8);
+      hostPosRef.current.set(-42, 0.14, 7.8);
     } else {
       const tourT = (scrollProgress - 0.16) / (0.88 - 0.16);
-      hostPosRef.current.set(-52 + tourT * 104, 0.14, 7.8);
+      hostPosRef.current.set(-40 + tourT * 80, 0.14, 7.8);
     }
 
     for (let i = 0; i < peds.length; i++) {

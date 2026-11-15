@@ -109,7 +109,7 @@ export const PORTFOLIO_CONTENT: PortfolioContent = {
       awningColor: 0x991f2e,
       trimColor: '#f87171',
       icon: 'User',
-      xPos: -52,
+      xPos: -38.469,
     },
     {
       id: 1,
@@ -120,7 +120,7 @@ export const PORTFOLIO_CONTENT: PortfolioContent = {
       awningColor: 0xe6dac1,
       trimColor: '#fbbf24',
       icon: 'Zap',
-      xPos: -26,
+      xPos: -19.234,
     },
     {
       id: 2,
@@ -142,7 +142,7 @@ export const PORTFOLIO_CONTENT: PortfolioContent = {
       awningColor: 0xe6dac1,
       trimColor: '#38bdf8',
       icon: 'FileText',
-      xPos: 26,
+      xPos: 19.234,
     },
     {
       id: 4,
@@ -153,7 +153,7 @@ export const PORTFOLIO_CONTENT: PortfolioContent = {
       awningColor: 0x991f2e,
       trimColor: '#c084fc',
       icon: 'Send',
-      xPos: 52,
+      xPos: 38.469,
     },
   ],
 
