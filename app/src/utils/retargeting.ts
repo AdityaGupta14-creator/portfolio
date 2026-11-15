@@ -1,3 +1,9 @@
+/**
+ * RETARGETING UTILITIES (DISABLED FOR ACTIVE WALKERS)
+ * Retargeting from Rigify metarig (in characters.opt.glb) to Mixamo Walking FBX
+ * is intentionally disabled in favor of Mixamo-cloned pedestrians per user decision.
+ * Retained for reference and future retargeting calibration.
+ */
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 

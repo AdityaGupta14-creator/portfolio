@@ -1,0 +1,70 @@
+const RIGIFY_TO_MIXAMO_MAP = {
+  'spine': 'Hips',
+  'spine.001': 'Spine',
+  'spine.002': 'Spine1',
+  'spine.003': 'Spine2',
+  'spine.004': 'Neck',
+  'spine.006': 'Head',
+  'shoulder.l': 'LeftShoulder',
+  'shoulder.r': 'RightShoulder',
+  'shoulderl': 'LeftShoulder',
+  'shoulderr': 'RightShoulder',
+  'upper_arm.l': 'LeftArm',
+  'upper_arm.r': 'RightArm',
+  'upper_arml': 'LeftArm',
+  'upper_armr': 'RightArm',
+  'forearm.l': 'LeftForeArm',
+  'forearm.r': 'RightForeArm',
+  'forearml': 'LeftForeArm',
+  'forearmr': 'RightForeArm',
+  'hand.l': 'LeftHand',
+  'hand.r': 'RightHand',
+  'handl': 'LeftHand',
+  'handr': 'RightHand',
+  'thigh.l': 'LeftUpLeg',
+  'thigh.r': 'RightUpLeg',
+  'thighl': 'LeftUpLeg',
+  'thighr': 'RightUpLeg',
+  'shin.l': 'LeftLeg',
+  'shin.r': 'RightLeg',
+  'shinl': 'LeftLeg',
+  'shinr': 'RightLeg',
+  'foot.l': 'LeftFoot',
+  'foot.r': 'RightFoot',
+  'footl': 'LeftFoot',
+  'footr': 'RightFoot',
+  'toe.l': 'LeftToeBase',
+  'toe.r': 'RightToeBase',
+  'toel': 'LeftToeBase',
+  'toer': 'RightToeBase',
+};
+
+const sampleTargetBones = [
+  'GLTF_created_0_rootJoint',
+  'spine_36',
+  'spine001_23',
+  'spine002_22',
+  'spine003_21',
+  'spine004_2',
+  'spine005_1',
+  'spine006_0',
+  'shoulderL_10',
+  'upper_armL_9',
+  'forearmL_8',
+  'handL_5',
+  'thighL_30',
+  'shinL_29',
+  'footL_28',
+  'toeL_26',
+  'thighR_35',
+  'shinR_34',
+  'footR_33',
+  'toeR_31'
+];
+
+sampleTargetBones.forEach(b => {
+  const stripped = b.replace(/_\d+$/, '').trim().toLowerCase();
+  const strippedNoDot = stripped.replace(/\./g, '');
+  const match = RIGIFY_TO_MIXAMO_MAP[stripped] || RIGIFY_TO_MIXAMO_MAP[strippedNoDot];
+  console.log(b, '-> stripped:', stripped, 'match:', match);
+});

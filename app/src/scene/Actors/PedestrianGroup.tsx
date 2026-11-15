@@ -1,1089 +1,824 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { RAW_BOUNDS, BUILDING_PROXIES } from '../../data/buildings';
 import { useAppStore } from '../../store/useAppStore';
-import { PORTFOLIO_CONTENT } from '../../data/content';
 
-// Pre-configure MeshoptDecoder for characters GLTF loading
+// Pre-configure MeshoptDecoder for static extras GLTF loading
 useGLTF.preload('/models/characters.opt.glb', true, true, (loader) => {
   loader.setMeshoptDecoder(MeshoptDecoder);
 });
 
-// Reusable math vectors to avoid heap allocation in useFrame
-const AXIS_X = new THREE.Vector3(1, 0, 0);
-const AXIS_Y = new THREE.Vector3(0, 1, 0);
-const TEMP_Q = new THREE.Quaternion();
-const TEMP_Q2 = new THREE.Quaternion();
-
-// ─── Colour palettes ────────────────────────────────────────────────────────
-const SKIN_TONES = [0xf5d0b5, 0xe0ac8b, 0xc6865c, 0x8d5534, 0xf7dcc4, 0xd4a87c];
-const COAT_COLORS = [
-  0x1e293b, 0x991b1b, 0x0f766e, 0xd97706, 0x3730a3,
-  0x4b5563, 0xbe185d, 0x166534, 0x2563eb, 0x7c2d12,
-  0x6d28d9, 0x0e7490, 0xb45309,
+// ── Natural Clothing & Appearance Palettes ──────────────────────────────────
+const SUIT_PALETTE = [
+  0x1e293b, // Navy
+  0x27272a, // Charcoal
+  0x334155, // Slate
+  0x36453b, // Olive Earth
+  0x7c5e42, // Warm Camel
+  0x2d2421, // Deep Espresso
+  0x4a1c24, // Muted Burgundy
+  0x3f4756, // Steel
 ];
-const PANTS_COLORS = [0x1e242b, 0x2b394a, 0x4b3f35, 0x334155, 0x18181b, 0x292524];
-const HAIR_COLORS = [0x1a1615, 0x4a3222, 0x8c5a32, 0xd4a359, 0x2c221e, 0x78350f];
-const ACCESSORY_COLORS = [0x27272a, 0x7f1d1d, 0x1e3a5f, 0x3f6212, 0x581c87];
 
-// ─── Sidewalk lane definitions (Z-coordinate bands) ─────────────────────────
-//  Back sidewalk  (behind buildings): z ≈ -8.0 to -10.0
-//  Front promenade (camera side):     z ≈  7.0 to  10.0
-interface LaneDef {
-  zCenter: number;
-  zSpread: number;     // ± random offset within lane
-  xMin: number;
-  xMax: number;
-  faceDir: 1 | -1;    // base walking direction along X
+const PANTS_PALETTE = [
+  0x27272a, // Charcoal
+  0x1e2430, // Classic Navy
+  0x635343, // Khaki Chino
+  0x2f3542, // Slate Dark
+  0x26201d, // Dark Brown
+  0x495057, // Stone Grey
+  0x1b263b, // Dark Denim
+  0x1f2229, // Anthracite
+];
+
+const SHIRT_PALETTE = [
+  0xf8fafc, // Crisp White
+  0xdbeafe, // Soft Sky Blue
+  0xfef9c3, // Pale Cream
+  0xe2e8f0, // Heather Grey
+  0xe0f2fe, // Heather Ice
+  0xdcfce7, // Soft Sage
+  0xf5f0eb, // Natural Linen
+  0xfce7f3, // Soft Blush
+];
+
+const SKIN_PALETTE = [
+  0xf5d0b5, // Fair
+  0xe0ac8b, // Medium Warm
+  0xc6865c, // Tan
+  0x8d5534, // Warm Bronze
+  0xf7dcc4, // Peach
+  0xd4a87c, // Golden Tan
+  0x6e4327, // Deep Bronze
+];
+
+const HAIR_PALETTE = [
+  0x18181b, // Soft Black
+  0x2d221e, // Dark Brown
+  0x4a3022, // Chestnut
+  0x5c4738, // Warm Ash
+  0x785b45, // Sandy Brown
+  0x27272a, // Charcoal
+];
+
+const SHOE_PALETTE = [
+  0x131418, // Black Leather
+  0x241b18, // Espresso Leather
+  0x31191c, // Cordovan / Oxblood
+  0x3b2b23, // Brown Leather
+];
+
+// ── Pedestrian Configurations (8 Diversified Mixamo Walkers) ─────────────────
+// Bounding box lanes:
+// North sidewalk: facade at Z = -13.4, curb at Z = -6.2, pavement Y = 0.16
+// South promenade: curb at Z = 5.1, boundary at Z = 13.3, pavement Y = 0.10
+export interface PedestrianConfig {
+  id: number;
+  laneSide: 'north' | 'south';
+  initialX: number;
+  zLane: number;
+  pavementY: number;
+  dir: 1 | -1;
+  speedMult: number;     // 0.90 to 1.10
+  heightMult: number;    // 0.95 to 1.05
+  suitColor: number;
+  pantsColor: number;
+  shirtColor: number;
+  skinColor: number;
+  hairColor: number;
+  shoeColor: number;
+  pairWithId: number | null; // Id of companion pedestrian walking side-by-side
+  pairOffsetZ: number;       // Lateral offset for pair
 }
 
-const SIDEWALK_LANES: LaneDef[] = [
-  // Back sidewalk — two sub-lanes
-  { zCenter: -8.3, zSpread: 0.6, xMin: -90, xMax: 90, faceDir: 1 },
-  { zCenter: -9.6, zSpread: 0.5, xMin: -90, xMax: 90, faceDir: -1 },
-  // Front promenade — two sub-lanes
-  { zCenter: 7.8, zSpread: 0.5, xMin: -88, xMax: 88, faceDir: -1 },
-  { zCenter: 9.2, zSpread: 0.6, xMin: -88, xMax: 88, faceDir: 1 },
+const PEDESTRIAN_CONFIGS: PedestrianConfig[] = [
+  // Pair A (North Sidewalk, walking West together)
+  {
+    id: 0,
+    laneSide: 'north',
+    initialX: 16.0,
+    zLane: -10.4,
+    pavementY: RAW_BOUNDS.pavementY,
+    dir: -1,
+    speedMult: 1.00,
+    heightMult: 1.02,
+    suitColor: SUIT_PALETTE[0], // Navy
+    pantsColor: PANTS_PALETTE[0], // Charcoal
+    shirtColor: SHIRT_PALETTE[0], // White
+    skinColor: SKIN_PALETTE[1],
+    hairColor: HAIR_PALETTE[0],
+    shoeColor: SHOE_PALETTE[0],
+    pairWithId: 1,
+    pairOffsetZ: 0,
+  },
+  {
+    id: 1,
+    laneSide: 'north',
+    initialX: 16.3,
+    zLane: -9.6,
+    pavementY: RAW_BOUNDS.pavementY,
+    dir: -1,
+    speedMult: 1.00,
+    heightMult: 0.97,
+    suitColor: SUIT_PALETTE[4], // Warm Camel
+    pantsColor: PANTS_PALETTE[1], // Classic Navy
+    shirtColor: SHIRT_PALETTE[1], // Sky Blue
+    skinColor: SKIN_PALETTE[0],
+    hairColor: HAIR_PALETTE[2],
+    shoeColor: SHOE_PALETTE[1],
+    pairWithId: 0,
+    pairOffsetZ: 0.8,
+  },
+  // North Solo Walkers
+  {
+    id: 2,
+    laneSide: 'north',
+    initialX: 32.0,
+    zLane: -8.8,
+    pavementY: RAW_BOUNDS.pavementY,
+    dir: -1,
+    speedMult: 0.95,
+    heightMult: 1.04,
+    suitColor: SUIT_PALETTE[2], // Slate
+    pantsColor: PANTS_PALETTE[3], // Slate Dark
+    shirtColor: SHIRT_PALETTE[3], // Heather Grey
+    skinColor: SKIN_PALETTE[2],
+    hairColor: HAIR_PALETTE[1],
+    shoeColor: SHOE_PALETTE[0],
+    pairWithId: null,
+    pairOffsetZ: 0,
+  },
+  {
+    id: 3,
+    laneSide: 'north',
+    initialX: -14.0,
+    zLane: -10.2,
+    pavementY: RAW_BOUNDS.pavementY,
+    dir: 1,
+    speedMult: 1.05,
+    heightMult: 0.98,
+    suitColor: SUIT_PALETTE[3], // Olive
+    pantsColor: PANTS_PALETTE[2], // Khaki Chino
+    shirtColor: SHIRT_PALETTE[2], // Cream
+    skinColor: SKIN_PALETTE[3],
+    hairColor: HAIR_PALETTE[0],
+    shoeColor: SHOE_PALETTE[3],
+    pairWithId: null,
+    pairOffsetZ: 0,
+  },
+  // Pair B (South Promenade, walking West together)
+  {
+    id: 4,
+    laneSide: 'south',
+    initialX: 24.0,
+    zLane: 8.2,
+    pavementY: 0.10,
+    dir: -1,
+    speedMult: 0.98,
+    heightMult: 1.01,
+    suitColor: SUIT_PALETTE[1], // Charcoal
+    pantsColor: PANTS_PALETTE[0], // Charcoal
+    shirtColor: SHIRT_PALETTE[0], // White
+    skinColor: SKIN_PALETTE[5],
+    hairColor: HAIR_PALETTE[1],
+    shoeColor: SHOE_PALETTE[0],
+    pairWithId: 5,
+    pairOffsetZ: 0,
+  },
+  {
+    id: 5,
+    laneSide: 'south',
+    initialX: 24.3,
+    zLane: 9.0,
+    pavementY: 0.10,
+    dir: -1,
+    speedMult: 0.98,
+    heightMult: 0.96,
+    suitColor: SUIT_PALETTE[6], // Burgundy
+    pantsColor: PANTS_PALETTE[6], // Dark Denim
+    shirtColor: SHIRT_PALETTE[6], // Linen
+    skinColor: SKIN_PALETTE[4],
+    hairColor: HAIR_PALETTE[4],
+    shoeColor: SHOE_PALETTE[2],
+    pairWithId: 4,
+    pairOffsetZ: 0.8,
+  },
+  // South Solo Walkers
+  {
+    id: 6,
+    laneSide: 'south',
+    initialX: 38.0,
+    zLane: 7.6,
+    pavementY: 0.10,
+    dir: -1,
+    speedMult: 1.02,
+    heightMult: 1.03,
+    suitColor: SUIT_PALETTE[7], // Steel
+    pantsColor: PANTS_PALETTE[5], // Stone
+    shirtColor: SHIRT_PALETTE[5], // Sage
+    skinColor: SKIN_PALETTE[6],
+    hairColor: HAIR_PALETTE[0],
+    shoeColor: SHOE_PALETTE[1],
+    pairWithId: null,
+    pairOffsetZ: 0,
+  },
+  {
+    id: 7,
+    laneSide: 'south',
+    initialX: -8.0,
+    zLane: 9.6,
+    pavementY: 0.10,
+    dir: 1,
+    speedMult: 0.93,
+    heightMult: 0.99,
+    suitColor: SUIT_PALETTE[5], // Espresso
+    pantsColor: PANTS_PALETTE[4], // Dark Brown
+    shirtColor: SHIRT_PALETTE[4], // Ice
+    skinColor: SKIN_PALETTE[1],
+    hairColor: HAIR_PALETTE[3],
+    shoeColor: SHOE_PALETTE[0],
+    pairWithId: null,
+    pairOffsetZ: 0,
+  },
 ];
 
-// ─── Pedestrian behaviour states ────────────────────────────────────────────
-type PedState = 'walking' | 'pausing' | 'turning';
+// Physical constants:
+// Base walking speed calibrated to Mixamo stride: 1.68 m/s
+const BASE_WALK_SPEED = 1.68;
+const MIN_PERSON_SPACING = 1.25; // meters
+const HOST_AVOID_RADIUS = 1.8;   // meters
+const LANE_X_MIN = -58;          // meters
+const LANE_X_MAX = 58;           // meters
+const CULL_DISTANCE = 75;        // meters to camera
 
-interface PedRuntime {
-  // Position & orientation
+type WalkerState = 'walking' | 'pausing' | 'turning';
+
+interface WalkerRuntime {
   x: number;
   z: number;
-  yaw: number;          // current facing angle (radians, around Y)
-  targetYaw: number;    // where we want to face
-
-  // Movement
-  dir: 1 | -1;          // +1 = positive-X, -1 = negative-X
-  speed: number;        // world-units per frame (~60 fps)
-  speedMult: number;    // personal speed multiplier (0.8–1.2)
-
-  // Lane assignment
-  lane: LaneDef;
-
-  // Appearance
-  skin: number;
-  coat: number;
-  pants: number;
-  hair: number;
-  accessoryColor: number;
-  hasBackpack: boolean;
-  hasHat: boolean;
-  scale: number;        // height variation (0.88–1.12)
-
-  // Walk-cycle animation
-  animPhase: number;    // current accumulated phase
-  animSpeed: number;    // walk cycle radians-per-second (matched to speed)
-
-  // Behaviour state machine
-  state: PedState;
-  stateTimer: number;   // countdown in seconds
-
-  // Pair-walking
-  pairPartner: number | null;   // index of partner pedestrian, or null
-  pairOffset: number;            // lateral Z offset from partner
-
-  // LOD
-  visible: boolean;
+  yaw: number;
+  targetYaw: number;
+  dir: 1 | -1;
+  state: WalkerState;
+  stateTimer: number;
 }
 
-// ─── Deterministic seeded PRNG (simple mulberry32) ──────────────────────────
-function mulberry32(a: number): () => number {
-  return () => {
-    let t = (a += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+interface PedestrianInstance {
+  config: PedestrianConfig;
+  root: THREE.Group;
+  mixer: THREE.AnimationMixer;
+  walkAction: THREE.AnimationAction;
+  standAction?: THREE.AnimationAction;
+  shadowMesh: THREE.Mesh;
 }
 
-// ─── Minimum spacing between any two pedestrians ────────────────────────────
-const MIN_SPACING = 2.8;          // world units
-const HOST_CLEARANCE = 3.2;       // avoid Aditya's avatar
+/**
+ * Applies unique cloned PBR materials to the pedestrian mesh
+ */
+function applyClonedMaterials(avatar: THREE.Object3D, config: PedestrianConfig) {
+  avatar.traverse((child) => {
+    if ((child as THREE.Mesh).isMesh) {
+      const mesh = child as THREE.Mesh;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
 
-// ─── Create initial pedestrian state ────────────────────────────────────────
-function createPedestrians(count: number): PedRuntime[] {
-  const rng = mulberry32(42);
-  const peds: PedRuntime[] = [];
+      const name = mesh.name.toLowerCase();
 
-  for (let i = 0; i < count; i++) {
-    const lane = SIDEWALK_LANES[i % SIDEWALK_LANES.length];
-    const speedMult = 0.8 + rng() * 0.4;                   // 0.8x – 1.2x
-    const baseSpeed = 0.035;                                 // tuned walk
-    const speed = baseSpeed * speedMult;
+      let color = config.suitColor;
+      let roughness = 0.65;
+      let metalness = 0.05;
 
-    // Walk-cycle angular speed: one full cycle ≈ 2 steps ≈ ~1.4 world units
-    // so animSpeed = speed * (2π / strideLength)
-    const strideLength = 1.4;
-    const animSpeed = speed * (2 * Math.PI / strideLength) * 60; // per-second
+      if (name.includes('suit') || name.includes('coat') || name.includes('jacket')) {
+        color = config.suitColor;
+        roughness = 0.65;
+        metalness = 0.05;
+      } else if (name.includes('pants') || name.includes('trousers') || name.includes('bottom')) {
+        color = config.pantsColor;
+        roughness = 0.70;
+        metalness = 0.05;
+      } else if (name.includes('shirt') || name.includes('top')) {
+        color = config.shirtColor;
+        roughness = 0.78;
+        metalness = 0.02;
+      } else if (name.includes('shoe') || name.includes('boot')) {
+        color = config.shoeColor;
+        roughness = 0.35;
+        metalness = 0.20;
+      } else if (
+        name.includes('body') ||
+        name.includes('skin') ||
+        name.includes('face') ||
+        name.includes('head')
+      ) {
+        color = config.skinColor;
+        roughness = 0.58;
+        metalness = 0.02;
+      } else if (name.includes('hair') || name.includes('eyelash')) {
+        color = config.hairColor;
+        roughness = 0.85;
+      } else if (name.includes('belt')) {
+        color = 0x111317;
+        roughness = 0.40;
+        metalness = 0.25;
+      }
 
-    const dir = (i % 2 === 0 ? lane.faceDir : (-lane.faceDir as 1 | -1)) as 1 | -1;
-    const x = lane.xMin + rng() * (lane.xMax - lane.xMin);
-    const z = lane.zCenter + (rng() - 0.5) * 2 * lane.zSpread;
-
-    const shouldPause = rng() < 0.18;                       // ~18 % start pausing
-
-    peds.push({
-      x,
-      z,
-      yaw: dir > 0 ? Math.PI / 2 : -Math.PI / 2,
-      targetYaw: dir > 0 ? Math.PI / 2 : -Math.PI / 2,
-      dir,
-      speed,
-      speedMult,
-      lane,
-      skin: SKIN_TONES[Math.floor(rng() * SKIN_TONES.length)],
-      coat: COAT_COLORS[Math.floor(rng() * COAT_COLORS.length)],
-      pants: PANTS_COLORS[Math.floor(rng() * PANTS_COLORS.length)],
-      hair: HAIR_COLORS[Math.floor(rng() * HAIR_COLORS.length)],
-      accessoryColor: ACCESSORY_COLORS[Math.floor(rng() * ACCESSORY_COLORS.length)],
-      hasBackpack: rng() < 0.3,
-      hasHat: rng() < 0.2,
-      scale: 0.88 + rng() * 0.24,
-      animPhase: rng() * Math.PI * 2,                       // random start offset
-      animSpeed,
-      state: shouldPause ? 'pausing' : 'walking',
-      stateTimer: shouldPause ? 2 + rng() * 2 : 8 + rng() * 12,
-      pairPartner: null,
-      pairOffset: 0,
-      visible: true,
-    });
-  }
-
-  // ─── Assign pairs (some walk side-by-side) ────────────────────────────
-  const pairChance = 0.22;
-  for (let i = 0; i < peds.length - 1; i += 2) {
-    if (rng() < pairChance && peds[i].lane === peds[i + 1].lane) {
-      // Only pair people on the same lane
-      peds[i].pairPartner = i + 1;
-      peds[i + 1].pairPartner = i;
-      peds[i + 1].pairOffset = 0.55;
-      peds[i].pairOffset = -0.55;
-      // Sync direction and speed
-      peds[i + 1].dir = peds[i].dir;
-      peds[i + 1].speed = peds[i].speed;
-      peds[i + 1].speedMult = peds[i].speedMult;
-      peds[i + 1].animSpeed = peds[i].animSpeed;
-      peds[i + 1].x = peds[i].x;
-      peds[i + 1].targetYaw = peds[i].targetYaw;
-      peds[i + 1].yaw = peds[i].yaw;
+      mesh.material = new THREE.MeshStandardMaterial({
+        color,
+        roughness,
+        metalness,
+      });
     }
-  }
-
-  return peds;
+  });
 }
 
-// ─── Shared geometries (created once) ───────────────────────────────────────
-const GEO = {
-  torso: new THREE.BoxGeometry(0.5, 0.72, 0.3),
-  head: new THREE.SphereGeometry(0.19, 16, 16),
-  hair: new THREE.SphereGeometry(0.2, 16, 14, 0, Math.PI * 2, 0, Math.PI * 0.6),
-  hat: new THREE.CylinderGeometry(0.22, 0.24, 0.12, 12),
-  hatBrim: new THREE.CylinderGeometry(0.32, 0.32, 0.025, 12),
-  upperArm: new THREE.CylinderGeometry(0.08, 0.07, 0.36, 8),
-  forearm: new THREE.CylinderGeometry(0.07, 0.06, 0.32, 8),
-  hand: new THREE.SphereGeometry(0.06, 8, 8),
-  upperLeg: new THREE.CylinderGeometry(0.1, 0.085, 0.42, 10),
-  lowerLeg: new THREE.CylinderGeometry(0.085, 0.075, 0.38, 10),
-  shoe: new THREE.BoxGeometry(0.16, 0.1, 0.28),
-  backpack: new THREE.BoxGeometry(0.34, 0.44, 0.18),
-  shadow: new THREE.PlaneGeometry(0.7, 0.7),
-};
-
-// ─── Contact-shadow material (shared, transparent disc) ─────────────────────
-const shadowMat = new THREE.MeshBasicMaterial({
-  color: 0x000000,
-  transparent: true,
-  opacity: 0.18,
-  depthWrite: false,
-});
-
 // ═════════════════════════════════════════════════════════════════════════════
-//  COMPONENT
+//  MIXAMO-CLONED WALKING PEDESTRIANS
 // ═════════════════════════════════════════════════════════════════════════════
-
-const TOTAL_PEDESTRIANS = 20;
-
-const ProceduralPedestrians: React.FC = () => {
+const MixamoWalkingPedestrians: React.FC = () => {
   const { camera } = useThree();
   const scrollProgress = useAppStore((s) => s.scrollProgress);
-  const isLowPerformanceMode = useAppStore((s) => s.isLowPerformanceMode);
+  const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
 
-  // ─── Refs for every pedestrian body part ────────────────────────────
-  const rootRefs = useRef<(THREE.Group | null)[]>([]);
-  const leftUpperArmRefs = useRef<(THREE.Group | null)[]>([]);
-  const rightUpperArmRefs = useRef<(THREE.Group | null)[]>([]);
-  const leftForearmRefs = useRef<(THREE.Group | null)[]>([]);
-  const rightForearmRefs = useRef<(THREE.Group | null)[]>([]);
-  const leftUpperLegRefs = useRef<(THREE.Group | null)[]>([]);
-  const rightUpperLegRefs = useRef<(THREE.Group | null)[]>([]);
-  const leftLowerLegRefs = useRef<(THREE.Group | null)[]>([]);
-  const rightLowerLegRefs = useRef<(THREE.Group | null)[]>([]);
-  const headRefs = useRef<(THREE.Group | null)[]>([]);
-  const torsoRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const hipRefs = useRef<(THREE.Group | null)[]>([]);
-  const shadowRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const [instances, setInstances] = useState<PedestrianInstance[]>([]);
+  const runtimeRef = useRef<WalkerRuntime[]>(
+    PEDESTRIAN_CONFIGS.map((cfg) => ({
+      x: cfg.initialX,
+      z: cfg.zLane,
+      yaw: cfg.dir > 0 ? Math.PI / 2 : -Math.PI / 2,
+      targetYaw: cfg.dir > 0 ? Math.PI / 2 : -Math.PI / 2,
+      dir: cfg.dir,
+      state: 'walking',
+      stateTimer: 6.0 + Math.random() * 8.0,
+    }))
+  );
 
-  // ─── Pedestrian mutable runtime state ───────────────────────────────
-  const pedsRef = useRef<PedRuntime[]>(createPedestrians(TOTAL_PEDESTRIANS));
+  const hostPosRef = useRef<THREE.Vector3>(new THREE.Vector3(-40.27, RAW_BOUNDS.pavementY, -10.0));
 
-  // ─── Pre-build materials per pedestrian (stable, no allocations per frame)
-  const materials = useMemo(() => {
-    return pedsRef.current.map((p) => ({
-      skin: new THREE.MeshStandardMaterial({ color: p.skin, roughness: 0.62 }),
-      coat: new THREE.MeshStandardMaterial({ color: p.coat, roughness: 0.72 }),
-      pants: new THREE.MeshStandardMaterial({ color: p.pants, roughness: 0.78 }),
-      hair: new THREE.MeshStandardMaterial({ color: p.hair, roughness: 0.68 }),
-      shoe: new THREE.MeshStandardMaterial({ color: 0x1c1917, roughness: 0.55 }),
-      accessory: new THREE.MeshStandardMaterial({ color: p.accessoryColor, roughness: 0.7 }),
-    }));
+  // Load Walking.fbx and Waving.fbx once, then clone independently
+  useEffect(() => {
+    let isMounted = true;
+    const manager = new THREE.LoadingManager();
+
+    // Fast loading modifier: skip heavy embedded texture decompression
+    const transparentPixel =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    manager.setURLModifier((url) => {
+      if (
+        url.startsWith('blob:') ||
+        url.match(/\.(png|jpg|jpeg|tga|bmp|tif|tiff)(\?.*)?$/i) ||
+        url.includes('.fbm')
+      ) {
+        return transparentPixel;
+      }
+      return url;
+    });
+
+    const loader = new FBXLoader(manager);
+
+    const loadFBXPromise = (url: string): Promise<THREE.Group> => {
+      return new Promise((resolve, reject) => {
+        loader.load(url, resolve, undefined, reject);
+      });
+    };
+
+    Promise.all([
+      loadFBXPromise('/animations/Walking.fbx'),
+      loadFBXPromise('/animations/Waving.fbx').catch(() => null),
+    ])
+      .then(([walkingFbx, wavingFbx]) => {
+        if (!isMounted) return;
+
+        // Base model dimensions
+        const rawBox = new THREE.Box3().setFromObject(walkingFbx);
+        const rawHeight = rawBox.max.y - rawBox.min.y || 179.27;
+        const baseTargetHeight = 1.75;
+        const baseScaleFactor = baseTargetHeight / rawHeight;
+
+        // Strip X/Z root motion from hips track on walk clip
+        const rawWalkClip = walkingFbx.animations[0];
+        const walkClip = rawWalkClip ? rawWalkClip.clone() : new THREE.AnimationClip('Walk', 0, []);
+        walkClip.name = 'Walk';
+
+        walkClip.tracks.forEach((track) => {
+          if (track.name.toLowerCase().endsWith('hips.position')) {
+            const vals = (track as THREE.VectorKeyframeTrack).values;
+            const x0 = vals[0];
+            const z0 = vals[2];
+            for (let i = 0; i < vals.length; i += 3) {
+              vals[i] = x0;
+              vals[i + 2] = z0;
+            }
+          }
+        });
+
+        // Prepare optional standing pose from wave clip
+        const standClip = wavingFbx && wavingFbx.animations[0] ? wavingFbx.animations[0].clone() : null;
+        if (standClip) standClip.name = 'Stand';
+
+        // Spawn 8 independent pedestrians with SkeletonUtils.clone
+        const spawned: PedestrianInstance[] = PEDESTRIAN_CONFIGS.map((config) => {
+          const clonedAvatar = SkeletonUtils.clone(walkingFbx) as THREE.Group;
+
+          // Apply unique individual height scale
+          const totalScale = baseScaleFactor * config.heightMult;
+          clonedAvatar.scale.setScalar(totalScale);
+
+          // Center X/Z and align feet at local Y = 0
+          const scaledBox = new THREE.Box3().setFromObject(clonedAvatar);
+          const scaledCenter = new THREE.Vector3();
+          scaledBox.getCenter(scaledCenter);
+          clonedAvatar.position.set(-scaledCenter.x, -scaledBox.min.y, -scaledCenter.z);
+
+          // Deep-clone unique materials and apply natural outfit colors
+          applyClonedMaterials(clonedAvatar, config);
+
+          // Independent AnimationMixer
+          const mixer = new THREE.AnimationMixer(clonedAvatar);
+          const walkAction = mixer.clipAction(walkClip);
+          walkAction.setLoop(THREE.LoopRepeat, Infinity);
+          walkAction.setEffectiveTimeScale(config.speedMult);
+
+          // Random walk phase offset
+          walkAction.time = Math.random() * walkClip.duration;
+          walkAction.play();
+
+          let standAction: THREE.AnimationAction | undefined = undefined;
+          if (standClip) {
+            standAction = mixer.clipAction(standClip);
+            standAction.setLoop(THREE.LoopOnce, 1);
+            standAction.clampWhenFinished = true;
+          }
+
+          // Advance 1 frame to evaluate bind pose
+          mixer.update(0.016);
+
+          // Subtle contact shadow disc
+          const shadowMesh = new THREE.Mesh(
+            new THREE.RingGeometry(0.04, 0.42 * config.heightMult, 20),
+            new THREE.MeshBasicMaterial({
+              color: 0x000000,
+              transparent: true,
+              opacity: 0.24,
+              depthWrite: false,
+            })
+          );
+          shadowMesh.rotation.x = -Math.PI / 2;
+          shadowMesh.position.y = 0.012;
+
+          const root = new THREE.Group();
+          root.position.set(config.initialX, config.pavementY, config.zLane);
+          root.rotation.y = config.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+          root.add(clonedAvatar);
+          root.add(shadowMesh);
+
+          return {
+            config,
+            root,
+            mixer,
+            walkAction,
+            standAction,
+            shadowMesh,
+          };
+        });
+
+        if (isMounted) {
+          setInstances(spawned);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load Mixamo pedestrian assets:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // ─── Host character position for collision avoidance ────────────────
-  const hostPosRef = useRef<THREE.Vector3>(new THREE.Vector3(-46, 0, 8.2));
+  // Frame simulation loop
+  useFrame((_state, delta) => {
+    if (instances.length === 0) return;
+    const clampedDelta = Math.min(delta, 0.05);
+    const runtimes = runtimeRef.current;
 
-  // ═══ ANIMATION FRAME ══════════════════════════════════════════════════
-  useFrame((_, delta) => {
-    const peds = pedsRef.current;
-    const clampedDelta = Math.min(delta, 0.05); // cap delta to prevent jumps
-
-    // ─── Determine LOD: how many pedestrians to show ──────────────
-    const maxVisible = isLowPerformanceMode
-      ? 6
-      : scrollProgress < 0.12
-        ? 4                // camera is far up in the sky
-        : TOTAL_PEDESTRIANS;
-
-    // ─── Estimate host character position from scroll progress ────
-    if (scrollProgress > 0.88) {
-      hostPosRef.current.set(-7, 0.14, 22.5);
-    } else if (scrollProgress < 0.16) {
-      hostPosRef.current.set(-48, 0.14, 7.8);
+    // Track host position from building stops or hub
+    if (focusedBuildingIndex !== null && focusedBuildingIndex >= 0 && focusedBuildingIndex < 5) {
+      const px = BUILDING_PROXIES[focusedBuildingIndex].xPos - 1.8;
+      hostPosRef.current.set(px, RAW_BOUNDS.pavementY, -10.0);
+    } else if (scrollProgress >= 0.92) {
+      hostPosRef.current.set(38.8, 0.10, 4.6);
+    } else if (scrollProgress < 0.36) {
+      hostPosRef.current.set(BUILDING_PROXIES[0].xPos - 1.8, RAW_BOUNDS.pavementY, -10.0);
     } else {
-      const t = (scrollProgress - 0.16) / 0.72;
-      hostPosRef.current.set(-52 + t * 104, 0.14, 7.8);
+      const t = (scrollProgress - 0.36) / (0.92 - 0.36);
+      const startX = BUILDING_PROXIES[0].xPos - 1.8;
+      const endX = BUILDING_PROXIES[4].xPos - 1.8;
+      hostPosRef.current.set(startX + t * (endX - startX), RAW_BOUNDS.pavementY, -10.0);
     }
 
-    for (let idx = 0; idx < peds.length; idx++) {
-      const p = peds[idx];
-      const root = rootRefs.current[idx];
-      if (!root) continue;
+    for (let i = 0; i < instances.length; i++) {
+      const inst = instances[i];
+      const rt = runtimes[i];
+      const cfg = inst.config;
 
-      // ─── LOD visibility ───────────────────────────────────────
-      p.visible = idx < maxVisible;
-      root.visible = p.visible;
-      if (!p.visible) continue;
+      // ── Distance Culling & Performance LOD ─────────────────────────────────
+      const distToCamera = camera.position.distanceTo(inst.root.position);
+      const isNearCamera = distToCamera < CULL_DISTANCE;
 
-      // ─── State machine ────────────────────────────────────────
-      p.stateTimer -= clampedDelta;
+      if (isNearCamera) {
+        inst.mixer.update(clampedDelta);
+        inst.shadowMesh.visible = true;
+      } else {
+        inst.shadowMesh.visible = false;
+      }
 
-      if (p.state === 'pausing') {
-        // Idle: very gentle breathing sway, no leg/arm swing
-        if (p.stateTimer <= 0) {
-          p.state = 'walking';
-          p.stateTimer = 8 + Math.random() * 14;
+      // ── State Machine ──────────────────────────────────────────────────────
+      rt.stateTimer -= clampedDelta;
+
+      if (rt.state === 'pausing') {
+        // Paused on sidewalk
+        if (rt.stateTimer <= 0) {
+          rt.state = 'walking';
+          rt.stateTimer = 8.0 + Math.random() * 12.0;
+
+          if (inst.standAction && inst.walkAction) {
+            inst.standAction.crossFadeTo(inst.walkAction, 0.3, true);
+            inst.walkAction.reset().play();
+          } else {
+            inst.walkAction.setEffectiveTimeScale(cfg.speedMult);
+          }
         }
-      } else if (p.state === 'turning') {
-        // Smoothly rotate to targetYaw
-        let diff = p.targetYaw - p.yaw;
+      } else if (rt.state === 'turning') {
+        // Smoothly rotate 180 degrees at lane ends
+        let diff = rt.targetYaw - rt.yaw;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
-        p.yaw += diff * 4.0 * clampedDelta;
+        rt.yaw += diff * 4.0 * clampedDelta;
 
-        if (Math.abs(diff) < 0.08) {
-          p.yaw = p.targetYaw;
-          p.state = 'walking';
-          p.stateTimer = 8 + Math.random() * 14;
+        if (Math.abs(diff) < 0.06) {
+          rt.yaw = rt.targetYaw;
+          rt.state = 'walking';
+          rt.stateTimer = 8.0 + Math.random() * 12.0;
         }
       } else {
-        // ─── WALKING ───────────────────────────────────────────
-        const moveX = p.speed * p.dir * 60 * clampedDelta;
-        p.x += moveX;
+        // ── Walking: Move along pavement lane with stride-matched speed ───────
+        const velocity = BASE_WALK_SPEED * cfg.speedMult;
+        rt.x += velocity * rt.dir * clampedDelta;
 
-        // Advance animation phase, matched to movement speed
-        p.animPhase += p.animSpeed * clampedDelta;
+        // Check lane boundaries (loop by turning around)
+        const hitEnd =
+          (rt.dir > 0 && rt.x > LANE_X_MAX) ||
+          (rt.dir < 0 && rt.x < LANE_X_MIN);
 
-        // ─── Boundary: smooth turn at lane ends ─────────────────
-        const nearEnd =
-          (p.dir > 0 && p.x > p.lane.xMax - 2) ||
-          (p.dir < 0 && p.x < p.lane.xMin + 2);
+        if (hitEnd) {
+          rt.dir = (rt.dir * -1) as 1 | -1;
+          rt.targetYaw = rt.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+          rt.state = 'turning';
+          rt.stateTimer = 0;
 
-        if (nearEnd) {
-          p.dir = (p.dir * -1) as 1 | -1;
-          p.targetYaw = p.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
-          p.state = 'turning';
-          p.stateTimer = 0;
-
-          // Sync paired partner
-          if (p.pairPartner !== null) {
-            const partner = peds[p.pairPartner];
-            partner.dir = p.dir;
-            partner.targetYaw = p.targetYaw;
-            partner.state = 'turning';
-            partner.stateTimer = 0;
+          // Sync pair partner if walking together
+          if (cfg.pairWithId !== null && runtimes[cfg.pairWithId]) {
+            const partnerRt = runtimes[cfg.pairWithId];
+            partnerRt.dir = rt.dir;
+            partnerRt.targetYaw = rt.targetYaw;
+            partnerRt.state = 'turning';
+            partnerRt.stateTimer = 0;
           }
         }
 
-        // ─── Random pause chance ──────────────────────────────
-        if (p.stateTimer <= 0 && Math.random() < 0.005) {
-          p.state = 'pausing';
-          p.stateTimer = 2 + Math.random() * 2.5;
+        // Random pause (2-4 seconds)
+        if (rt.stateTimer <= 0 && Math.random() < 0.006) {
+          rt.state = 'pausing';
+          rt.stateTimer = 2.0 + Math.random() * 2.0;
 
-          // Paired partner also pauses
-          if (p.pairPartner !== null) {
-            const partner = peds[p.pairPartner];
-            partner.state = 'pausing';
-            partner.stateTimer = p.stateTimer;
+          if (inst.standAction && inst.walkAction) {
+            inst.walkAction.crossFadeTo(inst.standAction, 0.3, true);
+            inst.standAction.reset().play();
+          } else {
+            inst.walkAction.setEffectiveTimeScale(0);
+          }
+
+          // Sync pair partner
+          if (cfg.pairWithId !== null && runtimes[cfg.pairWithId]) {
+            const partnerRt = runtimes[cfg.pairWithId];
+            const partnerInst = instances[cfg.pairWithId];
+            partnerRt.state = 'pausing';
+            partnerRt.stateTimer = rt.stateTimer;
+            if (partnerInst?.standAction && partnerInst?.walkAction) {
+              partnerInst.walkAction.crossFadeTo(partnerInst.standAction, 0.3, true);
+              partnerInst.standAction.reset().play();
+            } else if (partnerInst?.walkAction) {
+              partnerInst.walkAction.setEffectiveTimeScale(0);
+            }
           }
         }
       }
 
-      // ─── Smooth yaw interpolation (always, for all states) ──
-      {
-        let diff = p.targetYaw - p.yaw;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        p.yaw += diff * 3.5 * clampedDelta;
-      }
+      // Smooth yaw interpolation towards target
+      let yawDiff = rt.targetYaw - rt.yaw;
+      while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+      while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+      rt.yaw += yawDiff * 3.5 * clampedDelta;
 
-      // ─── Pair offset ──────────────────────────────────────────
-      let zFinal = p.z;
-      if (p.pairPartner !== null) {
-        zFinal = p.z + p.pairOffset;
-      }
-
-      // ─── Collision avoidance (simple pairwise spacing) ────────
-      for (let j = 0; j < peds.length; j++) {
-        if (j === idx || !peds[j].visible) continue;
-        if (j === p.pairPartner) continue; // don't avoid your partner
-        const dx = p.x - peds[j].x;
-        const dz = zFinal - peds[j].z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-        if (dist < MIN_SPACING && dist > 0.01) {
-          // Push apart along x primarily
-          const pushStrength = (MIN_SPACING - dist) * 0.3 * clampedDelta * 60;
-          p.x += (dx / dist) * pushStrength;
+      // ── Collision Avoidance & Clearances ──────────────────────────────────
+      // 1. Separation between pedestrians (minimum 1.0m spacing)
+      for (let j = 0; j < instances.length; j++) {
+        if (j === i) continue;
+        if (cfg.pairWithId === j) continue; // Companions walk side-by-side
+        const otherRt = runtimes[j];
+        const dx = rt.x - otherRt.x;
+        const dz = rt.z - otherRt.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist < MIN_PERSON_SPACING && dist > 0.01) {
+          const push = (MIN_PERSON_SPACING - dist) * 0.4 * clampedDelta * 60;
+          rt.x += (dx / dist) * push;
         }
       }
 
-      // ─── Avoid host character ──────────────────────────────────
-      {
-        const dx = p.x - hostPosRef.current.x;
-        const dz = zFinal - hostPosRef.current.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-        if (dist < HOST_CLEARANCE && dist > 0.01) {
-          const pushStrength = (HOST_CLEARANCE - dist) * 0.5 * clampedDelta * 60;
-          p.x += (dx / dist) * pushStrength;
-        }
+      // 2. Separation from Host Character
+      const hDx = rt.x - hostPosRef.current.x;
+      const hDz = rt.z - hostPosRef.current.z;
+      const hDist = Math.hypot(hDx, hDz);
+      if (hDist < HOST_AVOID_RADIUS && hDist > 0.01) {
+        const push = (HOST_AVOID_RADIUS - hDist) * 0.5 * clampedDelta * 60;
+        rt.x += (hDx / hDist) * push;
       }
 
-      // ─── Clamp to lane bounds ─────────────────────────────────
-      p.x = Math.max(p.lane.xMin, Math.min(p.lane.xMax, p.x));
-
-      // ─── Apply root position & rotation ────────────────────────
-      const walkBlend = p.state === 'walking' ? 1.0 : (p.state === 'turning' ? 0.3 : 0.0);
-      const phase = p.animPhase;
-
-      // Vertical bounce (only while walking)
-      const bounce = Math.abs(Math.sin(phase)) * 0.04 * walkBlend;
-      root.position.set(p.x, 0.06 + bounce, zFinal);
-      root.rotation.y = p.yaw;
-
-      // ─── Body part animations ─────────────────────────────────
-
-      // Hip group — slight bob and yaw
-      const hipG = hipRefs.current[idx];
-      if (hipG) {
-        hipG.position.y = 1.02 + Math.abs(Math.sin(phase)) * 0.035 * walkBlend;
-        hipG.rotation.y = Math.sin(phase) * 0.06 * walkBlend;
+      // 3. Lane Z boundaries (guarantees >= 2.5m clearance from building facades)
+      if (cfg.laneSide === 'north') {
+        rt.z = THREE.MathUtils.clamp(rt.z, -10.8, -8.4);
+      } else {
+        rt.z = THREE.MathUtils.clamp(rt.z, 7.4, 10.2);
       }
 
-      // Head — gentle look-around when paused, forward when walking
-      const headG = headRefs.current[idx];
-      if (headG) {
-        const headIdle = p.state === 'pausing' ? Math.sin(p.animPhase * 0.3 + idx) * 0.35 : 0;
-        headG.rotation.y = headIdle;
-        headG.rotation.x = Math.sin(p.animPhase * 0.5 + idx * 2) * 0.04;
-      }
-
-      // Leg swing amplitude
-      const legAmp = 0.52 * walkBlend;
-      const legSwing = Math.sin(phase) * legAmp;
-      const oppLegSwing = Math.sin(phase + Math.PI) * legAmp;
-
-      // Upper legs
-      const luL = leftUpperLegRefs.current[idx];
-      const ruL = rightUpperLegRefs.current[idx];
-      if (luL) luL.rotation.x = legSwing;
-      if (ruL) ruL.rotation.x = oppLegSwing;
-
-      // Lower legs (knee bend — only bends backward on contact)
-      const llL = leftLowerLegRefs.current[idx];
-      const rlL = rightLowerLegRefs.current[idx];
-      if (llL) llL.rotation.x = Math.max(0, -Math.cos(phase) * 0.5 * walkBlend);
-      if (rlL) rlL.rotation.x = Math.max(0, -Math.cos(phase + Math.PI) * 0.5 * walkBlend);
-
-      // Arms — opposite to legs
-      const luA = leftUpperArmRefs.current[idx];
-      const ruA = rightUpperArmRefs.current[idx];
-      if (luA) {
-        luA.rotation.x = oppLegSwing * 0.85;
-        luA.rotation.z = 0.06;
-      }
-      if (ruA) {
-        ruA.rotation.x = legSwing * 0.85;
-        ruA.rotation.z = -0.06;
-      }
-
-      // Forearms — slight bend that increases on backswing
-      const lfA = leftForearmRefs.current[idx];
-      const rfA = rightForearmRefs.current[idx];
-      if (lfA) lfA.rotation.x = -0.15 - Math.max(0, Math.sin(phase + Math.PI)) * 0.3 * walkBlend;
-      if (rfA) rfA.rotation.x = -0.15 - Math.max(0, Math.sin(phase)) * 0.3 * walkBlend;
-
-      // Contact shadow — scale with distance from camera for subtle LOD
-      const shd = shadowRefs.current[idx];
-      if (shd) {
-        const camDist = camera.position.distanceTo(root.position);
-        shd.visible = camDist < 60;
-      }
+      // Apply root translation and rotation
+      inst.root.position.set(rt.x, cfg.pavementY, rt.z);
+      inst.root.rotation.y = rt.yaw;
     }
   });
 
-  // ═══ RENDER ════════════════════════════════════════════════════════════
   return (
     <group>
-      {pedsRef.current.map((p, idx) => {
-        const mat = materials[idx];
-        return (
-          <group
-            key={idx}
-            ref={(el) => { rootRefs.current[idx] = el; }}
-            position={[p.x, 0.06, p.z]}
-            scale={p.scale}
-          >
-            {/* ── Contact shadow disc ───────────────────────────── */}
-            <mesh
-              ref={(el) => { shadowRefs.current[idx] = el; }}
-              rotation={[-Math.PI / 2, 0, 0]}
-              position={[0, 0.015, 0]}
-              material={shadowMat}
-              geometry={GEO.shadow}
-              renderOrder={-1}
-            />
-
-            {/* ── Hip / pelvis pivot ───────────────────────────── */}
-            <group ref={(el) => { hipRefs.current[idx] = el; }} position={[0, 1.02, 0]}>
-
-              {/* Torso */}
-              <mesh
-                ref={(el) => { torsoRefs.current[idx] = el; }}
-                position={[0, 0.1, 0]}
-                material={mat.coat}
-                geometry={GEO.torso}
-                castShadow
-              />
-
-              {/* Head group */}
-              <group ref={(el) => { headRefs.current[idx] = el; }} position={[0, 0.62, 0]}>
-                <mesh material={mat.skin} geometry={GEO.head} castShadow />
-                <mesh position={[0, 0.04, 0]} material={mat.hair} geometry={GEO.hair} />
-                {p.hasHat && (
-                  <>
-                    <mesh position={[0, 0.16, 0]} material={mat.accessory} geometry={GEO.hat} />
-                    <mesh position={[0, 0.1, 0]} material={mat.accessory} geometry={GEO.hatBrim} />
-                  </>
-                )}
-              </group>
-
-              {/* Backpack */}
-              {p.hasBackpack && (
-                <mesh position={[0, 0.12, -0.2]} material={mat.accessory} geometry={GEO.backpack} />
-              )}
-
-              {/* ── Left arm ──────────────────────────────────── */}
-              <group
-                ref={(el) => { leftUpperArmRefs.current[idx] = el; }}
-                position={[0.32, 0.38, 0]}
-              >
-                <mesh position={[0, -0.18, 0]} material={mat.coat} geometry={GEO.upperArm} castShadow />
-                <group
-                  ref={(el) => { leftForearmRefs.current[idx] = el; }}
-                  position={[0, -0.36, 0]}
-                >
-                  <mesh position={[0, -0.16, 0]} material={mat.coat} geometry={GEO.forearm} />
-                  <mesh position={[0, -0.34, 0]} material={mat.skin} geometry={GEO.hand} />
-                </group>
-              </group>
-
-              {/* ── Right arm ─────────────────────────────────── */}
-              <group
-                ref={(el) => { rightUpperArmRefs.current[idx] = el; }}
-                position={[-0.32, 0.38, 0]}
-              >
-                <mesh position={[0, -0.18, 0]} material={mat.coat} geometry={GEO.upperArm} castShadow />
-                <group
-                  ref={(el) => { rightForearmRefs.current[idx] = el; }}
-                  position={[0, -0.36, 0]}
-                >
-                  <mesh position={[0, -0.16, 0]} material={mat.coat} geometry={GEO.forearm} />
-                  <mesh position={[0, -0.34, 0]} material={mat.skin} geometry={GEO.hand} />
-                </group>
-              </group>
-            </group>
-
-            {/* ── Left leg ──────────────────────────────────────── */}
-            <group
-              ref={(el) => { leftUpperLegRefs.current[idx] = el; }}
-              position={[0.13, 0.78, 0]}
-            >
-              <mesh position={[0, -0.21, 0]} material={mat.pants} geometry={GEO.upperLeg} castShadow />
-              <group
-                ref={(el) => { leftLowerLegRefs.current[idx] = el; }}
-                position={[0, -0.42, 0]}
-              >
-                <mesh position={[0, -0.19, 0]} material={mat.pants} geometry={GEO.lowerLeg} />
-                <mesh position={[0, -0.4, 0.03]} material={mat.shoe} geometry={GEO.shoe} />
-              </group>
-            </group>
-
-            {/* ── Right leg ─────────────────────────────────────── */}
-            <group
-              ref={(el) => { rightUpperLegRefs.current[idx] = el; }}
-              position={[-0.13, 0.78, 0]}
-            >
-              <mesh position={[0, -0.21, 0]} material={mat.pants} geometry={GEO.upperLeg} castShadow />
-              <group
-                ref={(el) => { rightLowerLegRefs.current[idx] = el; }}
-                position={[0, -0.42, 0]}
-              >
-                <mesh position={[0, -0.19, 0]} material={mat.pants} geometry={GEO.lowerLeg} />
-                <mesh position={[0, -0.4, 0.03]} material={mat.shoe} geometry={GEO.shoe} />
-              </group>
-            </group>
-          </group>
-        );
-      })}
+      {instances.map((inst, idx) => (
+        <primitive key={idx} object={inst.root} />
+      ))}
     </group>
   );
 };
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  STEP 5: SKETCHFAB REALISTIC PEDESTRIANS WITH PROCEDURAL RIG ANIMATION
-// ══════════════════════════════════════════════════════════════════════════════
-
-interface CharacterModelDef {
-  key: string;
-  label: string;
-  defaultHeight: number;
+// ═════════════════════════════════════════════════════════════════════════════
+//  OPTIONAL STATIC EXTRAS FROM characters.opt.glb (Rigify)
+//  Subtle procedural breathing in code - NO retargeting or Mixamo clips
+// ═════════════════════════════════════════════════════════════════════════════
+interface StaticExtraDef {
+  modelKey: string;
+  position: [number, number, number];
+  rotationY: number;
+  height: number;
+  phaseOffset: number;
 }
 
-const PED_MODELS: CharacterModelDef[] = [
-  { key: '010', label: 'Casual Male', defaultHeight: 1.76 },
-  { key: '011', label: 'Female Customer', defaultHeight: 1.70 },
-  { key: '008', label: 'Teen', defaultHeight: 1.62 },
-  { key: '004', label: 'Male Coat', defaultHeight: 1.78 },
-  { key: '005', label: 'Husband 30s', defaultHeight: 1.75 },
-  { key: '002', label: 'Female Formal', defaultHeight: 1.68 },
-  { key: '003', label: 'Mature Male', defaultHeight: 1.74 },
-  { key: '355', label: 'Young Male', defaultHeight: 1.72 },
+const STATIC_EXTRAS: StaticExtraDef[] = [
+  // Storefront 101 Entrance Doorway (About Me)
+  {
+    modelKey: '011', // Female Customer
+    position: [BUILDING_PROXIES[0].xPos + 1.6, RAW_BOUNDS.pavementY, RAW_BOUNDS.northRowZ + 0.45],
+    rotationY: 0,
+    height: 1.70,
+    phaseOffset: 0.0,
+  },
+  // Storefront 105 Near Lamppost (Projects)
+  {
+    modelKey: '004', // Male in Coat
+    position: [BUILDING_PROXIES[2].xPos - 3.2, RAW_BOUNDS.pavementY, RAW_BOUNDS.northRowZ + 1.15],
+    rotationY: 0.35,
+    height: 1.78,
+    phaseOffset: 1.8,
+  },
+  // Storefront 109 Entrance Porch (Contact)
+  {
+    modelKey: '002', // Female Formal
+    position: [BUILDING_PROXIES[4].xPos + 2.0, RAW_BOUNDS.pavementY, RAW_BOUNDS.northRowZ + 0.45],
+    rotationY: -0.2,
+    height: 1.68,
+    phaseOffset: 3.2,
+  },
+  // South Promenade Park Bench / Trees
+  {
+    modelKey: '010', // Casual Male
+    position: [12.0, 0.10, 9.8],
+    rotationY: Math.PI,
+    height: 1.75,
+    phaseOffset: 4.5,
+  },
 ];
 
-const SKETCHFAB_SIDEWALK_LANES: LaneDef[] = [
-  // North Sidewalk (in front of brownstones)
-  { zCenter: -11.5, zSpread: 0.45, xMin: -76, xMax: 76, faceDir: 1 },
-  { zCenter: -8.2, zSpread: 0.45, xMin: -76, xMax: 76, faceDir: -1 },
-  // South Sidewalk (Park promenade)
-  { zCenter: 7.6, zSpread: 0.45, xMin: -76, xMax: 76, faceDir: -1 },
-  { zCenter: 10.6, zSpread: 0.55, xMin: -76, xMax: 76, faceDir: 1 },
-];
-
-const TOTAL_SKETCHFAB_PEDS = 12;
-
-const INITIAL_PED_SPAWNS: { laneIdx: number; x: number; dir: 1 | -1 }[] = [
-  // Zone 1: Building 101 (About Me, X = -52)
-  { laneIdx: 0, x: -47, dir: 1 },
-  { laneIdx: 1, x: -55, dir: -1 },
-  { laneIdx: 2, x: -50, dir: 1 },
-  // Zone 2: Building 103 (Skills, X = -26)
-  { laneIdx: 0, x: -23, dir: 1 },
-  { laneIdx: 2, x: -28, dir: -1 },
-  { laneIdx: 3, x: -28, dir: -1 }, // Pair with 4
-  // Zone 3: Building 105 (Projects, X = 0)
-  { laneIdx: 1, x: -2, dir: 1 },
-  { laneIdx: 0, x: -2, dir: 1 },   // Pair with 6
-  { laneIdx: 2, x: 5, dir: -1 },
-  // Zone 4 & 5: Buildings 107 & 109 (Resume & Contact, X = 26, 52)
-  { laneIdx: 1, x: 24, dir: 1 },
-  { laneIdx: 2, x: 28, dir: -1 },
-  { laneIdx: 0, x: 50, dir: -1 },
-];
-
-function createSketchfabPedestrians(count: number): PedRuntime[] {
-  const rng = mulberry32(108);
-  const peds: PedRuntime[] = [];
-
-  for (let i = 0; i < count; i++) {
-    const spawn = INITIAL_PED_SPAWNS[i % INITIAL_PED_SPAWNS.length];
-    const lane = SKETCHFAB_SIDEWALK_LANES[spawn.laneIdx];
-    const speedMult = 0.85 + rng() * 0.35; // 0.85x – 1.2x
-    const baseSpeed = 0.032;
-    const speed = baseSpeed * speedMult;
-    const strideLength = 1.25;
-    const animSpeed = speed * ((2 * Math.PI) / strideLength) * 60;
-
-    const dir = spawn.dir;
-    const x = spawn.x + (rng() - 0.5) * 2;
-    const z = lane.zCenter + (rng() - 0.5) * 2 * lane.zSpread;
-    const shouldPause = rng() < 0.16;
-
-    peds.push({
-      x,
-      z,
-      yaw: dir > 0 ? Math.PI / 2 : -Math.PI / 2,
-      targetYaw: dir > 0 ? Math.PI / 2 : -Math.PI / 2,
-      dir,
-      speed,
-      speedMult,
-      lane,
-      skin: 0,
-      coat: 0,
-      pants: 0,
-      hair: 0,
-      accessoryColor: 0,
-      hasBackpack: false,
-      hasHat: false,
-      scale: 0.92 + rng() * 0.16,
-      animPhase: rng() * Math.PI * 2,
-      animSpeed,
-      state: shouldPause ? 'pausing' : 'walking',
-      stateTimer: shouldPause ? 2 + rng() * 2 : 7 + rng() * 11,
-      pairPartner: null,
-      pairOffset: 0,
-      visible: true,
-    });
-  }
-
-  // Create 2 walking pairs
-  // Pair 4 & 5 on South sidewalk
-  peds[4].pairPartner = 5;
-  peds[5].pairPartner = 4;
-  peds[4].pairOffset = -0.55;
-  peds[5].pairOffset = 0.55;
-  peds[5].dir = peds[4].dir;
-  peds[5].speed = peds[4].speed;
-  peds[5].speedMult = peds[4].speedMult;
-  peds[5].animSpeed = peds[4].animSpeed;
-  peds[5].x = peds[4].x;
-  peds[5].targetYaw = peds[4].targetYaw;
-  peds[5].yaw = peds[4].yaw;
-
-  // Pair 6 & 7 on North sidewalk
-  peds[6].pairPartner = 7;
-  peds[7].pairPartner = 6;
-  peds[6].pairOffset = -0.55;
-  peds[7].pairOffset = 0.55;
-  peds[7].dir = peds[6].dir;
-  peds[7].speed = peds[6].speed;
-  peds[7].speedMult = peds[6].speedMult;
-  peds[7].animSpeed = peds[6].animSpeed;
-  peds[7].x = peds[6].x;
-  peds[7].targetYaw = peds[6].targetYaw;
-  peds[7].yaw = peds[6].yaw;
-
-  return peds;
-}
-
-interface PedRigBones {
-  thighL: THREE.Bone | null;
-  thighR: THREE.Bone | null;
-  shinL: THREE.Bone | null;
-  shinR: THREE.Bone | null;
-  footL: THREE.Bone | null;
-  footR: THREE.Bone | null;
-  upperArmL: THREE.Bone | null;
-  upperArmR: THREE.Bone | null;
-  forearmL: THREE.Bone | null;
-  forearmR: THREE.Bone | null;
-  spine: THREE.Bone | null;
-  spineUpper: THREE.Bone | null;
-}
-
-interface PedRestQuats {
-  thighL: THREE.Quaternion;
-  thighR: THREE.Quaternion;
-  shinL: THREE.Quaternion;
-  shinR: THREE.Quaternion;
-  footL: THREE.Quaternion;
-  footR: THREE.Quaternion;
-  upperArmL: THREE.Quaternion;
-  upperArmR: THREE.Quaternion;
-  forearmL: THREE.Quaternion;
-  forearmR: THREE.Quaternion;
-  spine: THREE.Quaternion;
-  spineUpper: THREE.Quaternion;
-}
-
-interface ClonedPedestrian {
-  object: THREE.Group;
-  bones: PedRigBones;
-  restQuats: PedRestQuats;
-  shadowMesh: THREE.Mesh;
-}
-
-const SketchfabPedestrians: React.FC = () => {
+const StaticStorefrontExtras: React.FC = () => {
   const gltf = useGLTF('/models/characters.opt.glb', true, true, (loader) => {
     loader.setMeshoptDecoder(MeshoptDecoder);
   });
 
-  const scrollProgress = useAppStore((s) => s.scrollProgress);
-  const isLowPerformanceMode = useAppStore((s) => s.isLowPerformanceMode);
-  const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
+  const spineRefs = useRef<(THREE.Bone | null)[]>([]);
 
-  const pedsRuntime = useRef<PedRuntime[]>(createSketchfabPedestrians(TOTAL_SKETCHFAB_PEDS));
-  const walkBlendArray = useRef<number[]>(new Array(TOTAL_SKETCHFAB_PEDS).fill(1.0));
-  const hostPosRef = useRef<THREE.Vector3>(new THREE.Vector3(-46, 0.14, 7.8));
-
-  // Instantiate each pedestrian using SkeletonUtils.clone so each has its own independent skeleton
-  const clonedPedestrians = useMemo<ClonedPedestrian[]>(() => {
-    return pedsRuntime.current.map((p, index) => {
-      const modelDef = PED_MODELS[index % PED_MODELS.length];
+  const extraRoots = useMemo(() => {
+    return STATIC_EXTRAS.map((extra, idx) => {
       const fullClone = SkeletonUtils.clone(gltf.scene);
 
-      // Keep only the target rig
+      // Keep only target metarig
       const otherRigs: THREE.Object3D[] = [];
       fullClone.traverse((obj) => {
         if (obj.name && obj.name.toLowerCase().startsWith('metarig')) {
-          if (!obj.name.includes(modelDef.key)) {
+          if (!obj.name.includes(extra.modelKey)) {
             otherRigs.push(obj);
           }
         }
       });
       otherRigs.forEach((r) => r.parent?.remove(r));
 
-      // Measure raw bounding box and scale to realistic stature
+      // Measure height and scale
       const box = new THREE.Box3().setFromObject(fullClone);
       const center = new THREE.Vector3();
       box.getCenter(center);
-      const rawHeight = box.max.y - box.min.y;
-      const targetH = modelDef.defaultHeight * p.scale;
-      const scaleFactor = targetH / (rawHeight || 1.75);
+      const rawH = box.max.y - box.min.y || 1.75;
+      const scale = extra.height / rawH;
 
       fullClone.position.set(-center.x, -box.min.y, -center.z);
 
-      const container = new THREE.Group();
-      container.scale.set(scaleFactor, scaleFactor, scaleFactor);
-      container.add(fullClone);
-
-      // Locate skeletal joint bones
-      const b: PedRigBones = {
-        thighL: null,
-        thighR: null,
-        shinL: null,
-        shinR: null,
-        footL: null,
-        footR: null,
-        upperArmL: null,
-        upperArmR: null,
-        forearmL: null,
-        forearmR: null,
-        spine: null,
-        spineUpper: null,
-      };
-
+      // Find spine bone for subtle procedural idle breathing
+      let spine: THREE.Bone | null = null;
       fullClone.traverse((o) => {
         if ((o as THREE.Bone).isBone) {
           const n = o.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-          if (n.includes('thighl') && !b.thighL) b.thighL = o as THREE.Bone;
-          if (n.includes('thighr') && !b.thighR) b.thighR = o as THREE.Bone;
-          if (n.includes('shinl') && !b.shinL) b.shinL = o as THREE.Bone;
-          if (n.includes('shinr') && !b.shinR) b.shinR = o as THREE.Bone;
-          if (n.includes('footl') && !b.footL) b.footL = o as THREE.Bone;
-          if (n.includes('footr') && !b.footR) b.footR = o as THREE.Bone;
-          if (n.includes('upperarml') && !b.upperArmL) b.upperArmL = o as THREE.Bone;
-          if (n.includes('upperarmr') && !b.upperArmR) b.upperArmR = o as THREE.Bone;
-          if (n.includes('forearml') && !b.forearmL) b.forearmL = o as THREE.Bone;
-          if (n.includes('forearmr') && !b.forearmR) b.forearmR = o as THREE.Bone;
           if (n === 'spine' || n.includes('spine001')) {
-            if (!b.spine) b.spine = o as THREE.Bone;
-          }
-          if (n.includes('spine002') || n.includes('chest')) {
-            if (!b.spineUpper) b.spineUpper = o as THREE.Bone;
+            if (!spine) spine = o as THREE.Bone;
           }
         }
       });
+      spineRefs.current[idx] = spine;
 
-      const rq: PedRestQuats = {
-        thighL: b.thighL ? b.thighL.quaternion.clone() : new THREE.Quaternion(),
-        thighR: b.thighR ? b.thighR.quaternion.clone() : new THREE.Quaternion(),
-        shinL: b.shinL ? b.shinL.quaternion.clone() : new THREE.Quaternion(),
-        shinR: b.shinR ? b.shinR.quaternion.clone() : new THREE.Quaternion(),
-        footL: b.footL ? b.footL.quaternion.clone() : new THREE.Quaternion(),
-        footR: b.footR ? b.footR.quaternion.clone() : new THREE.Quaternion(),
-        upperArmL: b.upperArmL ? b.upperArmL.quaternion.clone() : new THREE.Quaternion(),
-        upperArmR: b.upperArmR ? b.upperArmR.quaternion.clone() : new THREE.Quaternion(),
-        forearmL: b.forearmL ? b.forearmL.quaternion.clone() : new THREE.Quaternion(),
-        forearmR: b.forearmR ? b.forearmR.quaternion.clone() : new THREE.Quaternion(),
-        spine: b.spine ? b.spine.quaternion.clone() : new THREE.Quaternion(),
-        spineUpper: b.spineUpper ? b.spineUpper.quaternion.clone() : new THREE.Quaternion(),
-      };
-
-      // Soft contact shadow disc
+      // Contact shadow disc
       const shadow = new THREE.Mesh(
-        new THREE.RingGeometry(0.06, 0.48 * p.scale, 24),
-        new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false })
+        new THREE.RingGeometry(0.04, 0.42, 20),
+        new THREE.MeshBasicMaterial({
+          color: 0x000000,
+          transparent: true,
+          opacity: 0.22,
+          depthWrite: false,
+        })
       );
       shadow.rotation.x = -Math.PI / 2;
-      shadow.position.y = 0.015;
+      shadow.position.y = 0.012;
 
-      const rootWrapper = new THREE.Group();
-      rootWrapper.add(container);
-      rootWrapper.add(shadow);
+      const container = new THREE.Group();
+      container.scale.setScalar(scale);
+      container.add(fullClone);
 
-      return {
-        object: rootWrapper,
-        bones: b,
-        restQuats: rq,
-        shadowMesh: shadow,
-      };
+      const root = new THREE.Group();
+      root.position.set(...extra.position);
+      root.rotation.y = extra.rotationY;
+      root.add(container);
+      root.add(shadow);
+
+      return root;
     });
   }, [gltf]);
 
-  // Frame simulation loop
-  useFrame(({ camera }, delta) => {
-    const clampedDelta = Math.min(delta, 0.05);
-    const peds = pedsRuntime.current;
-    const blends = walkBlendArray.current;
-
-    // Determine LOD max visible
-    const maxVisible = isLowPerformanceMode
-      ? 6
-      : scrollProgress < 0.12
-        ? 4
-        : TOTAL_SKETCHFAB_PEDS;
-
-    // Estimate host position for collision avoidance
-    if (focusedBuildingIndex !== null) {
-      const b = PORTFOLIO_CONTENT.buildings[focusedBuildingIndex];
-      hostPosRef.current.set(b.xPos - 2.3, 0.16, -11.5);
-    } else if (scrollProgress > 0.88) {
-      hostPosRef.current.set(38.8, 0.10, 4.6);
-    } else if (scrollProgress < 0.16) {
-      hostPosRef.current.set(-42, 0.14, 7.8);
-    } else {
-      const tourT = (scrollProgress - 0.16) / (0.88 - 0.16);
-      hostPosRef.current.set(-40 + tourT * 80, 0.14, 7.8);
-    }
-
-    for (let i = 0; i < peds.length; i++) {
-      const p = peds[i];
-      const cloned = clonedPedestrians[i];
-      if (!cloned) continue;
-
-      // LOD visibility
-      p.visible = i < maxVisible;
-      cloned.object.visible = p.visible;
-      if (!p.visible) continue;
-
-      // Behaviour state machine
-      p.stateTimer -= clampedDelta;
-      if (p.state === 'pausing') {
-        blends[i] = Math.max(0, blends[i] - clampedDelta * 3.0);
-        if (p.stateTimer <= 0) {
-          p.state = 'walking';
-          p.stateTimer = 7 + Math.random() * 12;
-        }
-      } else if (p.state === 'turning') {
-        blends[i] = Math.max(0.2, blends[i] - clampedDelta * 2.0);
-        let diff = p.targetYaw - p.yaw;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        p.yaw += diff * 4.0 * clampedDelta;
-        if (Math.abs(diff) < 0.08) {
-          p.yaw = p.targetYaw;
-          p.state = 'walking';
-          p.stateTimer = 7 + Math.random() * 12;
-        }
-      } else {
-        // Walking
-        blends[i] = Math.min(1.0, blends[i] + clampedDelta * 3.0);
-        p.x += p.speed * p.dir * 60 * clampedDelta;
-        p.animPhase += p.animSpeed * clampedDelta;
-
-        // Path bounds: smooth turn at lane ends
-        if (
-          (p.dir > 0 && p.x > p.lane.xMax - 2) ||
-          (p.dir < 0 && p.x < p.lane.xMin + 2)
-        ) {
-          p.dir = (p.dir * -1) as 1 | -1;
-          p.targetYaw = p.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
-          p.state = 'turning';
-          p.stateTimer = 0;
-          if (p.pairPartner !== null) {
-            const partner = peds[p.pairPartner];
-            partner.dir = p.dir;
-            partner.targetYaw = p.targetYaw;
-            partner.state = 'turning';
-            partner.stateTimer = 0;
-          }
-        }
-
-        // Random pause
-        if (p.stateTimer <= 0 && Math.random() < 0.006) {
-          p.state = 'pausing';
-          p.stateTimer = 2.0 + Math.random() * 2.5;
-          if (p.pairPartner !== null) {
-            const partner = peds[p.pairPartner];
-            partner.state = 'pausing';
-            partner.stateTimer = p.stateTimer;
-          }
-        }
-      }
-
-      // Smooth yaw interpolation
-      let yawDiff = p.targetYaw - p.yaw;
-      while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
-      while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
-      p.yaw += yawDiff * 3.5 * clampedDelta;
-
-      // Pair lateral offset
-      let zFinal = p.z;
-      if (p.pairPartner !== null) {
-        zFinal = p.z + p.pairOffset;
-      }
-
-      // Pairwise collision avoidance
-      for (let j = 0; j < peds.length; j++) {
-        if (j === i || !peds[j].visible) continue;
-        if (j === p.pairPartner) continue;
-        const dx = p.x - peds[j].x;
-        const dz = zFinal - peds[j].z;
-        const dist = Math.hypot(dx, dz);
-        if (dist < 2.4 && dist > 0.01) {
-          const push = (2.4 - dist) * 0.35 * clampedDelta * 60;
-          p.x += (dx / dist) * push;
-        }
-      }
-
-      // Host character avoidance
-      const hDx = p.x - hostPosRef.current.x;
-      const hDz = zFinal - hostPosRef.current.z;
-      const hDist = Math.hypot(hDx, hDz);
-      if (hDist < 2.8 && hDist > 0.01) {
-        const push = (2.8 - hDist) * 0.5 * clampedDelta * 60;
-        p.x += (hDx / hDist) * push;
-      }
-
-      // Clamp within lane bounds
-      p.x = Math.max(p.lane.xMin, Math.min(p.lane.xMax, p.x));
-
-      // Root positioning and bobbing
-      const blend = blends[i];
-      const sinCycle = Math.sin(p.animPhase);
-      const cosCycle = Math.cos(p.animPhase);
-      const bob = Math.abs(cosCycle) * 0.032 * blend;
-      const yBase = p.lane.zCenter < 0 ? 0.16 : 0.10;
-
-      cloned.object.position.set(p.x, yBase + bob, zFinal);
-      cloned.object.rotation.y = p.yaw;
-
-      // Distance check for contact shadow LOD
-      const camDist = camera.position.distanceTo(cloned.object.position);
-      cloned.shadowMesh.visible = camDist < 55;
-
-      // Bone walk cycle rotations
-      const { bones, restQuats } = cloned;
-
-      // 1. Thighs
-      const thighAngle = sinCycle * 0.42 * blend;
-      if (bones.thighL) {
-        TEMP_Q.setFromAxisAngle(AXIS_X, thighAngle);
-        bones.thighL.quaternion.copy(restQuats.thighL).multiply(TEMP_Q);
-      }
-      if (bones.thighR) {
-        TEMP_Q.setFromAxisAngle(AXIS_X, -thighAngle);
-        bones.thighR.quaternion.copy(restQuats.thighR).multiply(TEMP_Q);
-      }
-
-      // 2. Shins (clamped knee bend)
-      if (bones.shinL) {
-        const kneeBend = Math.max(0, -sinCycle) * (0.55 * blend);
-        TEMP_Q.setFromAxisAngle(AXIS_X, kneeBend);
-        bones.shinL.quaternion.copy(restQuats.shinL).multiply(TEMP_Q);
-      }
-      if (bones.shinR) {
-        const kneeBend = Math.max(0, sinCycle) * (0.55 * blend);
-        TEMP_Q.setFromAxisAngle(AXIS_X, kneeBend);
-        bones.shinR.quaternion.copy(restQuats.shinR).multiply(TEMP_Q);
-      }
-
-      // 3. Feet
-      if (bones.footL) {
-        const footTilt = sinCycle * (0.18 * blend);
-        TEMP_Q.setFromAxisAngle(AXIS_X, -footTilt);
-        bones.footL.quaternion.copy(restQuats.footL).multiply(TEMP_Q);
-      }
-      if (bones.footR) {
-        const footTilt = -sinCycle * (0.18 * blend);
-        TEMP_Q.setFromAxisAngle(AXIS_X, -footTilt);
-        bones.footR.quaternion.copy(restQuats.footR).multiply(TEMP_Q);
-      }
-
-      // 4. Arms (opposite phase)
-      const armAngleL = sinCycle * (0.35 * blend);
-      if (bones.upperArmL) {
-        TEMP_Q.setFromAxisAngle(AXIS_X, armAngleL);
-        TEMP_Q2.setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.18);
-        TEMP_Q.multiply(TEMP_Q2);
-        bones.upperArmL.quaternion.copy(restQuats.upperArmL).multiply(TEMP_Q);
-      }
-      if (bones.upperArmR) {
-        TEMP_Q.setFromAxisAngle(AXIS_X, -armAngleL);
-        TEMP_Q2.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -0.18);
-        TEMP_Q.multiply(TEMP_Q2);
-        bones.upperArmR.quaternion.copy(restQuats.upperArmR).multiply(TEMP_Q);
-      }
-
-      // 5. Forearms (elbow flexion)
-      if (bones.forearmL) {
-        const elbowBend = 0.12 + Math.max(0, armAngleL) * 0.4;
-        TEMP_Q.setFromAxisAngle(AXIS_X, elbowBend);
-        bones.forearmL.quaternion.copy(restQuats.forearmL).multiply(TEMP_Q);
-      }
-      if (bones.forearmR) {
-        const elbowBend = 0.12 + Math.max(0, -armAngleL) * 0.4;
-        TEMP_Q.setFromAxisAngle(AXIS_X, elbowBend);
-        bones.forearmR.quaternion.copy(restQuats.forearmR).multiply(TEMP_Q);
-      }
-
-      // 6. Spine twist & breathing
-      if (bones.spine) {
-        const twist = -sinCycle * 0.04 * blend;
-        const breath = (1 - blend) * Math.sin(p.animPhase * 0.4) * 0.015;
-        TEMP_Q.setFromAxisAngle(AXIS_Y, twist);
-        TEMP_Q2.setFromAxisAngle(AXIS_X, breath);
-        TEMP_Q.multiply(TEMP_Q2);
-        bones.spine.quaternion.copy(restQuats.spine).multiply(TEMP_Q);
+  useFrame(({ clock }) => {
+    const elapsed = clock.getElapsedTime();
+    for (let i = 0; i < spineRefs.current.length; i++) {
+      const spine = spineRefs.current[i];
+      if (spine) {
+        const offset = STATIC_EXTRAS[i].phaseOffset;
+        spine.rotation.x = Math.sin(elapsed * 1.5 + offset) * 0.02;
+        spine.rotation.y = Math.sin(elapsed * 0.7 + offset) * 0.015;
       }
     }
   });
 
   return (
     <group>
-      {clonedPedestrians.map((cloned, idx) => (
-        <primitive key={idx} object={cloned.object} />
+      {extraRoots.map((root, idx) => (
+        <primitive key={idx} object={root} />
       ))}
     </group>
   );
 };
 
+// ═════════════════════════════════════════════════════════════════════════════
+//  EXPORTED COMPONENT
+// ═════════════════════════════════════════════════════════════════════════════
 export const PedestrianGroup: React.FC = () => {
-  const useOldCity = useAppStore((s) => s.useOldCity);
-  return useOldCity ? <ProceduralPedestrians /> : <SketchfabPedestrians />;
+  return (
+    <group>
+      {/* 8 Diversified Mixamo Walkers with independent materials & AnimationMixers */}
+      <MixamoWalkingPedestrians />
+
+      {/* 4 Static Storefront Extras with subtle procedural idle breathing */}
+      <StaticStorefrontExtras />
+    </group>
+  );
 };
