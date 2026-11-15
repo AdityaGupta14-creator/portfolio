@@ -161,6 +161,12 @@ export const CameraController: React.FC = () => {
     return p.has('signs') || p.get('view') === 'all-signs';
   }, []);
 
+  const isCrosswalkOverview = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    const p = new URLSearchParams(window.location.search);
+    return p.has('cw') || p.get('view') === 'crosswalk';
+  }, []);
+
   useFrame(() => {
     if (isTopDownDebug) {
       // Dev-only top-down debug view (Press B)
@@ -173,6 +179,13 @@ export const CameraController: React.FC = () => {
       camera.position.set(-52.0, 3.8, -2.5);
       camera.up.set(0, 1, 0);
       camera.lookAt(12.0, 4.35, -13.40);
+      return;
+    } else if (isCrosswalkOverview) {
+      // Dev-only street-level crosswalk framing (Crosswalk 2 at X = 13.0)
+      // Positioned on south promenade looking across both road lanes at north kerb waiting point
+      camera.position.set(6.5, 2.2, 5.8);
+      camera.up.set(0, 1, 0);
+      camera.lookAt(13.0, 1.2, -5.5);
       return;
     } else {
       camera.up.set(0, 1, 0);

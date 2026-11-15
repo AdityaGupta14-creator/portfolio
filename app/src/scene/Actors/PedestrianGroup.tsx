@@ -16,19 +16,33 @@ import {
   SidewalkLaneDef,
   PedestrianInitConfig,
 } from '../../data/pedestrianConfig';
+import {
+  CROSSWALK_ZONES,
+  CrosswalkZone,
+  crosswalkManager,
+} from '../../data/crosswalks';
 
 // Pre-configure MeshoptDecoder for static extras GLTF loading
 useGLTF.preload('/models/characters.opt.glb', true, true, (loader) => {
   loader.setMeshoptDecoder(MeshoptDecoder);
 });
 
-type PedestrianBehaviorState = 'walking' | 'avoiding' | 'following' | 'turning' | 'pausing';
+type PedestrianBehaviorState =
+  | 'walking'
+  | 'avoiding'
+  | 'following'
+  | 'turning'
+  | 'pausing'
+  | 'approach_kerb'
+  | 'wait'
+  | 'cross';
 
 interface WalkerRuntime {
   id: number;
   config: PedestrianInitConfig;
   lane: SidewalkLaneDef;
   x: number;
+  y: number;
   z: number;
   baseZ: number;
   lateralOffset: number;       // current lateral offset from lane centerline
@@ -41,6 +55,17 @@ interface WalkerRuntime {
   state: PedestrianBehaviorState;
   pauseTimer: number;          // countdown timer for random pause
   threatId: number | string | null; // ID of obstacle triggering avoidance
+
+  // Crosswalk crossing behavior
+  targetCrosswalk: CrosswalkZone | null;
+  crossingDirZ: 1 | -1; // 1 = North to South (+Z), -1 = South to North (-Z)
+  waitTimer: number;
+  gapCheckInfo: {
+    safe: boolean;
+    threatCarId: number | null;
+    threatCarDist: number;
+    safeDist: number;
+  } | null;
 }
 
 interface PedestrianInstance {
@@ -112,7 +137,7 @@ function applyClonedMaterials(avatar: THREE.Object3D, config: PedestrianInitConf
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  MIXAMO WALKING PEDESTRIANS WITH DYNAMIC AVOIDANCE & SPEED-MATCHING
+//  MIXAMO WALKING PEDESTRIANS WITH ROAD CROSSING & DYNAMIC CAR AVOIDANCE
 // ═════════════════════════════════════════════════════════════════════════════
 const MixamoWalkingPedestrians: React.FC = () => {
   const { camera } = useThree();
@@ -127,11 +152,21 @@ const MixamoWalkingPedestrians: React.FC = () => {
   const runtimesRef = useRef<WalkerRuntime[]>(
     PEDESTRIAN_CONFIGS.map((cfg) => {
       const lane = SIDEWALK_LANES[cfg.laneKey];
+
+      // Pedestrians 2 and 4 are designated crossers for Crosswalk 2 (Projects, X = 13.0)
+      let initialCrosswalk: CrosswalkZone | null = null;
+      if (cfg.id === 2 || cfg.id === 4) {
+        initialCrosswalk = CROSSWALK_ZONES[1]; // X = 13.0
+      } else if (cfg.id === 1) {
+        initialCrosswalk = CROSSWALK_ZONES[0]; // X = -39.0
+      }
+
       return {
         id: cfg.id,
         config: cfg,
         lane,
         x: cfg.initialX,
+        y: lane.pavementY,
         z: lane.zCenter,
         baseZ: lane.zCenter,
         lateralOffset: 0,
@@ -144,6 +179,10 @@ const MixamoWalkingPedestrians: React.FC = () => {
         state: 'walking',
         pauseTimer: 7.0 + Math.random() * 10.0,
         threatId: null,
+        targetCrosswalk: initialCrosswalk,
+        crossingDirZ: lane.side === 'north' ? 1 : -1,
+        waitTimer: 0,
+        gapCheckInfo: null,
       };
     })
   );
@@ -227,11 +266,9 @@ const MixamoWalkingPedestrians: React.FC = () => {
           const walkAction = mixer.clipAction(walkClip);
           walkAction.setLoop(THREE.LoopRepeat, Infinity);
 
-          // Calibrated timeScale based on natural stride
           const initialTimeScale = calculateWalkTimeScale(config.cruiseSpeed, config.heightMult);
           walkAction.setEffectiveTimeScale(initialTimeScale);
 
-          // Stagger walk phase offset
           walkAction.time = Math.random() * walkClip.duration;
           walkAction.play();
 
@@ -290,6 +327,10 @@ const MixamoWalkingPedestrians: React.FC = () => {
     if (instances.length === 0) return;
     const clampedDelta = Math.min(delta, 0.05);
     const runtimes = runtimesRef.current;
+    if (typeof window !== 'undefined') {
+      (window as any).__pedRuntimes = runtimes;
+      (window as any).__crosswalkManager = crosswalkManager;
+    }
 
     // Track host position from building stops or hub
     if (focusedBuildingIndex !== null && focusedBuildingIndex >= 0 && focusedBuildingIndex < 5) {
@@ -308,21 +349,140 @@ const MixamoWalkingPedestrians: React.FC = () => {
 
     const hostPos = hostPosRef.current;
 
-    // ── Phase 1: Avoidance & Kinematics Planning for Each Pedestrian ───────────
+    // ── Update Pedestrian State Machine ──────────────────────────────────────
     for (let i = 0; i < instances.length; i++) {
       const rt = runtimes[i];
       const cfg = rt.config;
       const lane = rt.lane;
 
-      if (rt.state === 'turning') {
-        // Smooth angular turning at lane ends
+      // ── STATE 1: APPROACH_KERB ─────────────────────────────────────────────
+      if (rt.state === 'approach_kerb') {
+        const cw = rt.targetCrosswalk!;
+        const waitingPoint =
+          rt.crossingDirZ > 0 ? cw.northWaitingPoint : cw.southWaitingPoint;
+
+        // Move toward kerb waiting point
+        const dx = waitingPoint.x - rt.x;
+        const dz = waitingPoint.z - rt.z;
+        const dist = Math.hypot(dx, dz);
+
+        if (dist > 0.15) {
+          const moveStep = Math.min(dist, cfg.cruiseSpeed * 0.9 * clampedDelta);
+          rt.x += (dx / dist) * moveStep;
+          rt.z += (dz / dist) * moveStep;
+          rt.targetSpeed = cfg.cruiseSpeed * 0.85;
+
+          // Face the target waiting point
+          rt.targetYaw = Math.atan2(dx, dz);
+        } else {
+          // Arrived at kerb waiting point: transition to WAIT
+          rt.x = waitingPoint.x;
+          rt.z = waitingPoint.z;
+          rt.state = 'wait';
+          rt.targetSpeed = 0;
+          rt.targetYaw = waitingPoint.facingYaw; // Face the road directly!
+          rt.waitTimer = 0;
+        }
+      }
+
+      // ── STATE 2: WAIT (Stand at kerb and evaluate oncoming cars) ────────────
+      else if (rt.state === 'wait') {
+        const cw = rt.targetCrosswalk!;
+        const waitingPoint =
+          rt.crossingDirZ > 0 ? cw.northWaitingPoint : cw.southWaitingPoint;
+
+        rt.targetSpeed = 0;
+        rt.targetYaw = waitingPoint.facingYaw; // Ensure facing the road
+
+        // Evaluate oncoming car safe gap
+        const gapCheck = crosswalkManager.isCrosswalkGapSafe(cw);
+        rt.gapCheckInfo = {
+          safe: gapCheck.safe,
+          threatCarId: gapCheck.threatCar ? gapCheck.threatCar.id : null,
+          threatCarDist: gapCheck.distance,
+          safeDist: gapCheck.safeDistance,
+        };
+
+        if (gapCheck.safe) {
+          // Gap is safe! Wait a brief 0.6s looking both ways then step out
+          rt.waitTimer += clampedDelta;
+          if (rt.waitTimer >= 0.6) {
+            rt.state = 'cross';
+            // Register crossing with crosswalk manager so cars brake!
+            crosswalkManager.setPedestrianCrossing(
+              cw.id,
+              rt.id,
+              rt.crossingDirZ > 0 ? 'north' : 'south'
+            );
+          }
+        } else {
+          // Car is passing or approaching within safe gap: stay put!
+          rt.waitTimer = 0;
+        }
+      }
+
+      // ── STATE 3: CROSS (Walk straight across at 1.6 m/s) ────────────────────
+      else if (rt.state === 'cross') {
+        const cw = rt.targetCrosswalk!;
+        const crossSpeed = 1.60; // 1.6 m/s per requirement
+        rt.targetSpeed = crossSpeed;
+        rt.targetYaw = rt.crossingDirZ > 0 ? Math.PI : 0; // Straight line across road
+
+        // Advance straight along Z
+        rt.z += crossSpeed * rt.crossingDirZ * clampedDelta;
+
+        // Smoothly adjust elevation from sidewalk (0.16/0.10) to road asphalt (-0.08)
+        if (rt.z > -5.8 && rt.z < 4.8) {
+          rt.y = -0.08; // Walking on asphalt roadway
+        } else if (rt.crossingDirZ > 0) {
+          // North to South: transition near south curb
+          rt.y = rt.z >= 4.8 ? 0.10 : 0.16;
+        } else {
+          // South to North: transition near north curb
+          rt.y = rt.z <= -5.8 ? 0.16 : 0.10;
+        }
+
+        // Keep registered with crosswalk manager while crossing
+        crosswalkManager.setPedestrianCrossing(
+          cw.id,
+          rt.id,
+          rt.crossingDirZ > 0 ? 'north' : 'south'
+        );
+
+        // Check if finished crossing (reached opposite sidewalk kerb)
+        const destinationKerbZ = rt.crossingDirZ > 0 ? 5.5 : -6.6;
+        const reachedOppositeKerb =
+          (rt.crossingDirZ > 0 && rt.z >= destinationKerbZ) ||
+          (rt.crossingDirZ < 0 && rt.z <= destinationKerbZ);
+
+        if (reachedOppositeKerb) {
+          // Free crosswalk for cars (triggers 1s clear countdown)
+          crosswalkManager.setPedestrianCrossing(cw.id, null, null);
+
+          // Assign new sidewalk lane on the destination side
+          const newLaneKey =
+            rt.crossingDirZ > 0 ? 'south-park' : 'north-building';
+          rt.lane = SIDEWALK_LANES[newLaneKey];
+          rt.baseZ = rt.lane.zCenter;
+          rt.dir = rt.lane.direction;
+          rt.targetYaw = rt.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+          rt.y = rt.lane.pavementY;
+          rt.state = 'walking';
+          rt.targetSpeed = cfg.cruiseSpeed;
+          rt.targetLateralOffset = 0;
+          rt.targetCrosswalk = null; // Will pick next crosswalk after walking
+          rt.gapCheckInfo = null;
+        }
+      }
+
+      // ── STATE 4: TURNING AT ENDS ───────────────────────────────────────────
+      else if (rt.state === 'turning') {
         let diff = rt.targetYaw - rt.yaw;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
         const maxTurnStep = AVOIDANCE_CONFIG.turnRate * clampedDelta;
         rt.yaw += Math.sign(diff) * Math.min(Math.abs(diff), maxTurnStep);
 
-        // Turn speed is halved to look natural
         rt.targetSpeed = cfg.cruiseSpeed * 0.45;
         rt.targetLateralOffset = 0;
 
@@ -331,7 +491,10 @@ const MixamoWalkingPedestrians: React.FC = () => {
           rt.state = 'walking';
           rt.targetSpeed = cfg.cruiseSpeed;
         }
-      } else if (rt.state === 'pausing') {
+      }
+
+      // ── STATE 5: PAUSING ───────────────────────────────────────────────────
+      else if (rt.state === 'pausing') {
         rt.pauseTimer -= clampedDelta;
         rt.targetSpeed = 0;
         if (rt.pauseTimer <= 0) {
@@ -339,14 +502,19 @@ const MixamoWalkingPedestrians: React.FC = () => {
           rt.targetSpeed = cfg.cruiseSpeed;
           rt.pauseTimer = 10.0 + Math.random() * 15.0;
         }
-      } else {
-        // Random pause trigger
-        rt.pauseTimer -= clampedDelta;
-        if (rt.pauseTimer <= 0 && Math.random() < 0.003) {
-          rt.state = 'pausing';
-          rt.pauseTimer = 2.0 + Math.random() * 2.0; // 2 to 4 seconds
-          rt.targetSpeed = 0;
-          continue;
+      }
+
+      // ── STATE 6: NORMAL SIDEWALK WALKING & AVOIDANCE ───────────────────────
+      else {
+        // Check if approaching a crosswalk
+        if (rt.targetCrosswalk) {
+          const cw = rt.targetCrosswalk;
+          const distToCwX = Math.abs(rt.x - cw.centerX);
+          if (distToCwX < 4.0) {
+            // Transition to APPROACH_KERB!
+            rt.state = 'approach_kerb';
+            continue;
+          }
         }
 
         // Boundary check at lane ends
@@ -362,21 +530,21 @@ const MixamoWalkingPedestrians: React.FC = () => {
           continue;
         }
 
-        // ── Look-Ahead Avoidance Scanning (2.5m look-ahead, 1.2m lateral trigger) ─
+        // Look-ahead avoidance scanning
         let closestThreatDist = Infinity;
         let threatLateralDiff = 0;
         let threatType: 'none' | 'oncoming' | 'leader' | 'host' = 'none';
         let threatSpeed = cfg.cruiseSpeed;
         let threatId: number | string | null = null;
 
-        // Scan other pedestrians
         for (let j = 0; j < instances.length; j++) {
           if (j === i) continue;
           const other = runtimes[j];
-          const dx = (other.x - rt.x) * rt.dir; // distance ahead in travel direction
+          if (other.state === 'cross' || other.state === 'wait') continue;
+
+          const dx = (other.x - rt.x) * rt.dir;
           const dz = other.z - rt.z;
 
-          // In front along travel vector and within lateral avoidance corridor
           if (
             dx > 0 &&
             dx <= AVOIDANCE_CONFIG.lookAheadDistance &&
@@ -387,16 +555,11 @@ const MixamoWalkingPedestrians: React.FC = () => {
               threatLateralDiff = dz;
               threatId = other.id;
               threatSpeed = other.currentSpeed;
-              if (other.dir !== rt.dir) {
-                threatType = 'oncoming';
-              } else {
-                threatType = 'leader';
-              }
+              threatType = other.dir !== rt.dir ? 'oncoming' : 'leader';
             }
           }
         }
 
-        // Scan host character
         const hostDx = (hostPos.x - rt.x) * rt.dir;
         const hostDz = hostPos.z - rt.z;
         if (
@@ -416,20 +579,13 @@ const MixamoWalkingPedestrians: React.FC = () => {
         rt.threatId = threatId;
 
         if (threatType === 'none') {
-          // Path clear: smoothly return to lane centerline and cruise speed
           rt.targetLateralOffset = 0;
           rt.targetSpeed = cfg.cruiseSpeed;
           rt.state = 'walking';
         } else if (threatType === 'oncoming' || threatType === 'host') {
-          // Oncoming pedestrian or host: steer smoothly sideways to pass
           rt.state = 'avoiding';
-
-          // Steer away from obstacle. If obstacle is to the right (dz > 0), steer left (-offset).
-          // If obstacle is to the left (dz < 0), steer right (+offset).
           const steerSign = threatLateralDiff >= 0 ? -1 : 1;
           let desiredOffset = steerSign * AVOIDANCE_CONFIG.maxLateralOffset;
-
-          // Boundary clamp: stay strictly within lane boundaries
           const candidateZ = rt.baseZ + desiredOffset;
           if (candidateZ < lane.minZ) {
             desiredOffset = lane.minZ - rt.baseZ;
@@ -438,28 +594,23 @@ const MixamoWalkingPedestrians: React.FC = () => {
           }
           rt.targetLateralOffset = desiredOffset;
 
-          // If dangerously close (< 0.85m), brake smoothly to prevent any overlap
           if (closestThreatDist < AVOIDANCE_CONFIG.minSafeDistance) {
             rt.targetSpeed = 0;
           } else {
             rt.targetSpeed = cfg.cruiseSpeed * 0.92;
           }
         } else if (threatType === 'leader') {
-          // Slower pedestrian in front traveling in same direction
           if (threatSpeed < cfg.cruiseSpeed) {
-            // Check if overtaking side is free
             const overtakeSign = threatLateralDiff >= 0 ? -1 : 1;
             const candidateOffset = overtakeSign * AVOIDANCE_CONFIG.maxLateralOffset;
             const candidateZ = rt.baseZ + candidateOffset;
             const isInBounds = candidateZ >= lane.minZ && candidateZ <= lane.maxZ;
 
             if (isInBounds && closestThreatDist > 1.3) {
-              // Smoothly steer sideways to overtake
               rt.state = 'avoiding';
               rt.targetLateralOffset = candidateOffset;
               rt.targetSpeed = cfg.cruiseSpeed;
             } else {
-              // Match leader speed with distance buffer
               rt.state = 'following';
               rt.targetLateralOffset = 0;
               if (closestThreatDist < AVOIDANCE_CONFIG.minSafeDistance) {
@@ -478,54 +629,49 @@ const MixamoWalkingPedestrians: React.FC = () => {
             rt.state = 'walking';
           }
         }
+
+        // Apply smooth lateral steering
+        const offsetDiff = rt.targetLateralOffset - rt.lateralOffset;
+        const maxDeltaOffset = AVOIDANCE_CONFIG.lateralSteerRate * clampedDelta;
+        rt.lateralOffset += Math.sign(offsetDiff) * Math.min(Math.abs(offsetDiff), maxDeltaOffset);
+
+        // Advance along sidewalk X
+        rt.x += rt.currentSpeed * rt.dir * clampedDelta;
+        rt.z = THREE.MathUtils.clamp(rt.baseZ + rt.lateralOffset, lane.minZ, lane.maxZ);
+        rt.y = lane.pavementY;
+
+        let steerAngle = 0;
+        if (rt.state === 'avoiding' && rt.currentSpeed > 0.15 && Math.abs(offsetDiff) > 0.05) {
+          const latVel = (Math.sign(offsetDiff) * Math.min(Math.abs(offsetDiff), maxDeltaOffset)) / clampedDelta;
+          steerAngle = Math.atan2(latVel, rt.currentSpeed * rt.dir) * 0.35;
+        }
+
+        const baseYaw = rt.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+        rt.targetYaw = baseYaw + steerAngle;
       }
 
-      // ── Smooth Speed Transition (Max Acceleration 2.0 m/s^2) ───────────────
+      // ── Kinematic Speed & Heading Updates ──────────────────────────────────
       const speedDiff = rt.targetSpeed - rt.currentSpeed;
       const maxDeltaSpeed = AVOIDANCE_CONFIG.maxAcceleration * clampedDelta;
       rt.currentSpeed += Math.sign(speedDiff) * Math.min(Math.abs(speedDiff), maxDeltaSpeed);
       rt.currentSpeed = Math.max(0, rt.currentSpeed);
 
-      // ── Smooth Lateral Steering (Max Lateral Rate 1.6 m/s) ──────────────────
-      const offsetDiff = rt.targetLateralOffset - rt.lateralOffset;
-      const maxDeltaOffset = AVOIDANCE_CONFIG.lateralSteerRate * clampedDelta;
-      rt.lateralOffset += Math.sign(offsetDiff) * Math.min(Math.abs(offsetDiff), maxDeltaOffset);
-
-      // Apply positions
-      rt.x += rt.currentSpeed * rt.dir * clampedDelta;
-      rt.z = THREE.MathUtils.clamp(rt.baseZ + rt.lateralOffset, lane.minZ, lane.maxZ);
-
-      // Heading steering angle: tilt heading slightly into lateral movement
-      let steerAngle = 0;
-      if (rt.state === 'avoiding' && rt.currentSpeed > 0.15 && Math.abs(offsetDiff) > 0.05) {
-        const latVel = (Math.sign(offsetDiff) * Math.min(Math.abs(offsetDiff), maxDeltaOffset)) / clampedDelta;
-        steerAngle = Math.atan2(latVel, rt.currentSpeed * rt.dir) * 0.35;
-      }
-
-      if (rt.state !== 'turning') {
-        const baseYaw = rt.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
-        const desiredYaw = baseYaw + steerAngle;
-        let diff = desiredYaw - rt.yaw;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        rt.yaw += Math.sign(diff) * Math.min(Math.abs(diff), AVOIDANCE_CONFIG.turnRate * clampedDelta);
-      }
+      let diff = rt.targetYaw - rt.yaw;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      rt.yaw += Math.sign(diff) * Math.min(Math.abs(diff), AVOIDANCE_CONFIG.turnRate * clampedDelta);
     }
 
-    // ── Phase 2: Matrix Updates, Distance Culling & Stride Matching ───────────
+    // ── Phase 2: Matrix Updates & Animation Synchronization ──────────────────
     for (let i = 0; i < instances.length; i++) {
       const inst = instances[i];
       const rt = runtimes[i];
       const cfg = rt.config;
-      const lane = rt.lane;
 
-      // Distance check for animation updates
       const distToCamera = camera.position.distanceTo(inst.root.position);
-      const isNearCamera = distToCamera < 75;
+      const isNearCamera = distToCamera < 85;
 
       if (isNearCamera) {
-        // Stride-matched AnimationAction timeScale:
-        // action.timeScale = currentSpeed / (clipNaturalSpeed * heightScale)
         const effectiveTimeScale = calculateWalkTimeScale(rt.currentSpeed, cfg.heightMult);
         inst.walkAction.setEffectiveTimeScale(effectiveTimeScale);
 
@@ -547,15 +693,14 @@ const MixamoWalkingPedestrians: React.FC = () => {
         inst.shadowMesh.visible = false;
       }
 
-      // Update root transformation
-      inst.root.position.set(rt.x, lane.pavementY, rt.z);
+      inst.root.position.set(rt.x, rt.y, rt.z);
       inst.root.rotation.y = rt.yaw;
     }
 
-    // Trigger debug overlay re-render every few frames when debug overlay is active
+    // Trigger debug overlay re-render
     if (isPedestrianDebug) {
       debugTickRef.current += clampedDelta;
-      if (debugTickRef.current > 0.08) {
+      if (debugTickRef.current > 0.06) {
         debugTickRef.current = 0;
         setDebugRenderTrigger((prev) => prev + 1);
       }
@@ -568,7 +713,7 @@ const MixamoWalkingPedestrians: React.FC = () => {
         <primitive key={idx} object={inst.root} />
       ))}
 
-      {/* ── Debug Overlay (Press P) ────────────────────────────────────────── */}
+      {/* ── Debug Overlay (Press P): Crosswalks, Gap Checks, States ────────── */}
       {isPedestrianDebug && (
         <PedestrianDebugOverlay runtimes={runtimesRef.current} />
       )}
@@ -578,27 +723,37 @@ const MixamoWalkingPedestrians: React.FC = () => {
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  DEBUG OVERLAY (PRESS P)
-//  Shows radius (0.35m), 2.5m look-ahead line, lane guides, and state sprites
+//  Shows crosswalk zones, kerb waiting points, gap checks, radius & state
 // ═════════════════════════════════════════════════════════════════════════════
 interface DebugOverlayProps {
   runtimes: WalkerRuntime[];
 }
 
-/**
- * Creates dynamic canvas textures for the floating debug state labels
- */
 function createDebugLabelTexture(rt: WalkerRuntime): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
-  canvas.height = 200;
+  canvas.height = 220;
   const ctx = canvas.getContext('2d');
   if (!ctx) return new THREE.CanvasTexture(canvas);
 
   const isThreat = rt.threatId !== null;
+  const isWait = rt.state === 'wait';
+  const isCross = rt.state === 'cross';
 
-  // Background rounded card
-  ctx.fillStyle = isThreat ? 'rgba(185, 28, 28, 0.92)' : 'rgba(15, 23, 42, 0.90)';
-  ctx.strokeStyle = isThreat ? '#fca5a5' : '#38bdf8';
+  // Card background styling
+  if (isWait) {
+    ctx.fillStyle = rt.gapCheckInfo?.safe
+      ? 'rgba(16, 185, 129, 0.92)' // Green when safe
+      : 'rgba(217, 119, 6, 0.92)';  // Amber when waiting for car
+  } else if (isCross) {
+    ctx.fillStyle = 'rgba(67, 56, 202, 0.92)'; // Indigo when crossing road
+  } else if (isThreat) {
+    ctx.fillStyle = 'rgba(185, 28, 28, 0.92)'; // Red on obstacle
+  } else {
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.90)';  // Slate default
+  }
+
+  ctx.strokeStyle = isWait ? '#fef08a' : (isCross ? '#a5b4fc' : '#38bdf8');
   ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.roundRect(8, 8, canvas.width - 16, canvas.height - 16, 20);
@@ -606,24 +761,36 @@ function createDebugLabelTexture(rt: WalkerRuntime): THREE.CanvasTexture {
   ctx.stroke();
 
   // Header Title
-  ctx.fillStyle = isThreat ? '#fef08a' : '#38bdf8';
+  ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 30px monospace';
   ctx.textAlign = 'center';
   ctx.fillText(`PED #${rt.id} • [${rt.state.toUpperCase()}]`, canvas.width / 2, 48);
 
   // Body metrics
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = '#f8fafc';
   ctx.font = '24px monospace';
-  ctx.fillText(`Speed: ${rt.currentSpeed.toFixed(2)} m/s (tgt: ${rt.targetSpeed.toFixed(2)})`, canvas.width / 2, 88);
-  ctx.fillText(`Offset: ${rt.lateralOffset.toFixed(2)}m (tgt: ${rt.targetLateralOffset.toFixed(2)})`, canvas.width / 2, 126);
+
+  if (isWait) {
+    const gap = rt.gapCheckInfo;
+    ctx.fillText(`Kerb Wait: ${gap?.safe ? 'GAP SAFE' : 'CAR PASSING'}`, canvas.width / 2, 92);
+    if (gap && !gap.safe) {
+      ctx.fillStyle = '#fee2e2';
+      ctx.fillText(`Car #${gap.threatCarId} at ${gap.threatCarDist.toFixed(1)}m < safe ${gap.safeDist.toFixed(1)}m`, canvas.width / 2, 136);
+    } else {
+      ctx.fillStyle = '#dcfce7';
+      ctx.fillText(`Ready to cross road -> 1.6 m/s`, canvas.width / 2, 136);
+    }
+  } else if (isCross) {
+    ctx.fillText(`Crossing Road: 1.60 m/s`, canvas.width / 2, 92);
+    ctx.fillText(`Target: ${rt.crossingDirZ > 0 ? 'South Promenade' : 'North Sidewalk'}`, canvas.width / 2, 136);
+  } else {
+    ctx.fillText(`v: ${rt.currentSpeed.toFixed(2)} m/s (tgt: ${rt.targetSpeed.toFixed(2)})`, canvas.width / 2, 92);
+    ctx.fillText(`Offset: ${rt.lateralOffset.toFixed(2)}m (tgt: ${rt.targetLateralOffset.toFixed(2)})`, canvas.width / 2, 136);
+  }
 
   ctx.fillStyle = '#94a3b8';
   ctx.font = '22px monospace';
-  ctx.fillText(
-    `${rt.lane.name} ${isThreat ? `| ⚠️ Threat: ${rt.threatId}` : ''}`,
-    canvas.width / 2,
-    165
-  );
+  ctx.fillText(`${rt.lane.name}`, canvas.width / 2, 182);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
@@ -643,6 +810,24 @@ const PedestrianDebugOverlay: React.FC<DebugOverlayProps> = ({ runtimes }) => {
     });
   }, []);
 
+  // Crosswalk zone boundary outlines
+  const crosswalkBoxes = useMemo(() => {
+    return CROSSWALK_ZONES.map((cw) => {
+      // 3D box outline on asphalt
+      const y = -0.06;
+      const pts = [
+        new THREE.Vector3(cw.xMin, y, cw.zRoadMin),
+        new THREE.Vector3(cw.xMax, y, cw.zRoadMin),
+        new THREE.Vector3(cw.xMax, y, cw.zRoadMax),
+        new THREE.Vector3(cw.xMin, y, cw.zRoadMax),
+        new THREE.Vector3(cw.xMin, y, cw.zRoadMin),
+      ];
+      const geom = new THREE.BufferGeometry().setFromPoints(pts);
+      const mat = new THREE.LineBasicMaterial({ color: 0xf59e0b, linewidth: 2 });
+      return { cw, line: new THREE.Line(geom, mat) };
+    });
+  }, []);
+
   return (
     <group>
       {/* 1. Lane Center Guide Lines */}
@@ -650,14 +835,46 @@ const PedestrianDebugOverlay: React.FC<DebugOverlayProps> = ({ runtimes }) => {
         <primitive key={idx} object={lineObj} />
       ))}
 
-      {/* 2. Per-Pedestrian Dynamic Annotations */}
+      {/* 2. Crosswalk Zones & Kerb Waiting Points */}
+      {crosswalkBoxes.map(({ cw, line }, idx) => {
+        const state = crosswalkManager.getCrosswalkState(cw.id);
+        const isOccupied = state.isOccupied || state.clearCountdown > 0;
+        const color = isOccupied ? 0xef4444 : 0x10b981;
+        (line.material as THREE.LineBasicMaterial).color.setHex(color);
+
+        return (
+          <group key={idx}>
+            <primitive object={line} />
+
+            {/* North Waiting Point Disc */}
+            <mesh
+              rotation={[-Math.PI / 2, 0, 0]}
+              position={[cw.northWaitingPoint.x, cw.northWaitingPoint.y + 0.03, cw.northWaitingPoint.z]}
+            >
+              <ringGeometry args={[0.35, 0.45, 24]} />
+              <meshBasicMaterial color={isOccupied ? '#ef4444' : '#10b981'} side={THREE.DoubleSide} />
+            </mesh>
+
+            {/* South Waiting Point Disc */}
+            <mesh
+              rotation={[-Math.PI / 2, 0, 0]}
+              position={[cw.southWaitingPoint.x, cw.southWaitingPoint.y + 0.03, cw.southWaitingPoint.z]}
+            >
+              <ringGeometry args={[0.35, 0.45, 24]} />
+              <meshBasicMaterial color={isOccupied ? '#ef4444' : '#10b981'} side={THREE.DoubleSide} />
+            </mesh>
+          </group>
+        );
+      })}
+
+      {/* 3. Per-Pedestrian Dynamic Annotations & Gap Checks */}
       {runtimes.map((rt) => {
-        const isTriggered = rt.threatId !== null;
+        const isTriggered = rt.threatId !== null || rt.state === 'wait';
         const lookAheadLength = AVOIDANCE_CONFIG.lookAheadDistance;
-        const startPt = new THREE.Vector3(rt.x, rt.lane.pavementY + 0.12, rt.z);
+        const startPt = new THREE.Vector3(rt.x, rt.y + 0.12, rt.z);
         const endPt = new THREE.Vector3(
           rt.x + rt.dir * lookAheadLength,
-          rt.lane.pavementY + 0.12,
+          rt.y + 0.12,
           rt.z + (rt.targetLateralOffset - rt.lateralOffset) * 0.5
         );
         const lineMat = new THREE.LineBasicMaterial({
@@ -669,27 +886,43 @@ const PedestrianDebugOverlay: React.FC<DebugOverlayProps> = ({ runtimes }) => {
         const lookAheadLine = new THREE.Line(lineGeom, lineMat);
         const labelTexture = createDebugLabelTexture(rt);
 
+        // Gap check line to threatening car (if waiting at kerb)
+        let gapLine: THREE.Line | null = null;
+        if (rt.state === 'wait' && rt.gapCheckInfo && !rt.gapCheckInfo.safe) {
+          const cars = crosswalkManager.getCars();
+          const threatCar = cars.find((c) => c.id === rt.gapCheckInfo?.threatCarId);
+          if (threatCar) {
+            const carPt = new THREE.Vector3(threatCar.x, 0.8, threatCar.z);
+            const gapGeom = new THREE.BufferGeometry().setFromPoints([startPt, carPt]);
+            const gapMat = new THREE.LineBasicMaterial({ color: 0xef4444, linewidth: 3, depthTest: false });
+            gapLine = new THREE.Line(gapGeom, gapMat);
+          }
+        }
+
         return (
           <group key={rt.id}>
             {/* 0.35m Radius Footprint Ring */}
             <mesh
               rotation={[-Math.PI / 2, 0, 0]}
-              position={[rt.x, rt.lane.pavementY + 0.025, rt.z]}
+              position={[rt.x, rt.y + 0.025, rt.z]}
             >
               <ringGeometry args={[0.33, 0.35, 32]} />
               <meshBasicMaterial
-                color={isTriggered ? '#ef4444' : '#06b6d4'}
+                color={rt.state === 'wait' ? '#f59e0b' : (rt.state === 'cross' ? '#818cf8' : (isTriggered ? '#ef4444' : '#06b6d4'))}
                 side={THREE.DoubleSide}
               />
             </mesh>
 
-            {/* 2.5m Look-Ahead Vector Line */}
-            <primitive object={lookAheadLine} />
+            {/* Look-Ahead Vector Line (while walking) */}
+            {rt.state !== 'wait' && <primitive object={lookAheadLine} />}
+
+            {/* Gap Check Line to Oncoming Car (while waiting at kerb) */}
+            {gapLine && <primitive object={gapLine} />}
 
             {/* Floating State & Telemetry Sprite Billboard */}
             <sprite
-              position={[rt.x, rt.lane.pavementY + 2.3, rt.z]}
-              scale={[2.4, 0.94, 1.0]}
+              position={[rt.x, rt.y + 2.3, rt.z]}
+              scale={[2.5, 1.05, 1.0]}
             >
               <spriteMaterial
                 map={labelTexture}
@@ -706,7 +939,6 @@ const PedestrianDebugOverlay: React.FC<DebugOverlayProps> = ({ runtimes }) => {
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  STATIC EXTRAS FROM characters.opt.glb (Rigify)
-//  Subtle procedural breathing in code - NO retargeting or Mixamo clips
 // ═════════════════════════════════════════════════════════════════════════════
 interface StaticExtraDef {
   modelKey: string;

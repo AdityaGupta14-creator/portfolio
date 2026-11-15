@@ -263,7 +263,7 @@ export const PEDESTRIAN_CONFIGS: PedestrianInitConfig[] = [
   {
     id: 2,
     laneKey: 'north-kerb',
-    initialX: -36.0,
+    initialX: 7.0,
     cruiseSpeed: 1.45,
     heightMult: 1.04,
     suitColor: SUIT_PALETTE[2], // Slate
@@ -291,7 +291,7 @@ export const PEDESTRIAN_CONFIGS: PedestrianInitConfig[] = [
   {
     id: 4,
     laneKey: 'south-kerb',
-    initialX: 30.0,
+    initialX: 20.0,
     cruiseSpeed: 1.40,
     heightMult: 1.01,
     suitColor: SUIT_PALETTE[1], // Charcoal
