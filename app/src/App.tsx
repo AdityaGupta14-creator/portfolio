@@ -14,6 +14,7 @@ import { Toast } from './components/Toast';
 import { AssetDebugPage } from './components/AssetDebugPage';
 import { AnimDebugPage } from './components/AnimDebugPage';
 import { CarsDebugPage } from './components/CarsDebugPage';
+import { CrosswalkDebugPage } from './components/CrosswalkDebugPage';
 
 export const App: React.FC = () => {
   const viewMode = useAppStore((s) => s.viewMode);
@@ -21,6 +22,7 @@ export const App: React.FC = () => {
   const isDebugMode = useAppStore((s) => s.isDebugMode);
   const isTopDownDebug = useAppStore((s) => s.isTopDownDebug);
   const isTrafficDebug = useAppStore((s) => s.isTrafficDebug);
+  const isPedestrianDebug = useAppStore((s) => s.isPedestrianDebug);
 
   // Check for /debug/assets route or query parameter (?debug=assets or #/debug/assets)
   const [isDebugRoute, setIsDebugRoute] = useState<boolean>(() => {
@@ -52,6 +54,16 @@ export const App: React.FC = () => {
     );
   });
 
+  // Check for /debug/crosswalk route or query parameter (?debug=crosswalk or #/debug/crosswalk)
+  const [isDebugCrosswalkRoute, setIsDebugCrosswalkRoute] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      window.location.pathname.startsWith('/debug/crosswalk') ||
+      window.location.search.includes('debug=crosswalk') ||
+      window.location.hash.includes('/debug/crosswalk')
+    );
+  });
+
   useEffect(() => {
     const checkRoute = () => {
       setIsDebugRoute(
@@ -68,6 +80,11 @@ export const App: React.FC = () => {
         window.location.pathname.startsWith('/debug/cars') ||
           window.location.search.includes('debug=cars') ||
           window.location.hash.includes('/debug/cars')
+      );
+      setIsDebugCrosswalkRoute(
+        window.location.pathname.startsWith('/debug/crosswalk') ||
+          window.location.search.includes('debug=crosswalk') ||
+          window.location.hash.includes('/debug/crosswalk')
       );
     };
     window.addEventListener('popstate', checkRoute);
@@ -140,6 +157,11 @@ export const App: React.FC = () => {
   // Render developer cars test route (/debug/cars)
   if (isDebugCarsRoute) {
     return <CarsDebugPage />;
+  }
+
+  // Render developer crosswalk test route (/debug/crosswalk)
+  if (isDebugCrosswalkRoute) {
+    return <CrosswalkDebugPage />;
   }
 
   return (
@@ -236,6 +258,28 @@ export const App: React.FC = () => {
             className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-semibold"
           >
             Exit Traffic Debug
+          </button>
+        </div>
+      )}
+
+      {/* Pedestrian Debug HUD Overlay (Press P) */}
+      {isPedestrianDebug && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-2 rounded-full bg-slate-900/95 border border-emerald-400/60 text-white font-mono text-xs shadow-2xl flex items-center gap-4 backdrop-blur-md pointer-events-auto">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="font-bold tracking-wider text-emerald-300">PEDESTRIAN DEBUG (Press P)</span>
+          <div className="h-4 w-px bg-slate-700" />
+          <span className="text-slate-300">
+            Speed-Matched Animation · Infinite Looping Routes · Lateral Avoidance
+          </span>
+          <div className="h-4 w-px bg-slate-700" />
+          <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold tracking-wide">
+            RED PEDESTRIANS: 0
+          </span>
+          <button
+            onClick={() => useAppStore.getState().togglePedestrianDebug()}
+            className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold"
+          >
+            Exit Pedestrian Debug
           </button>
         </div>
       )}

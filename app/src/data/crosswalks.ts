@@ -48,14 +48,14 @@ export const CROSSWALK_ZONES: CrosswalkZone[] = [
       x: -39.0,
       y: 0.16,
       z: -6.6,
-      facingYaw: Math.PI, // Facing South toward road
+      facingYaw: 0, // Facing South across road (+Z)
     },
     southWaitingPoint: {
       side: 'south',
       x: -39.0,
       y: 0.10,
       z: 5.5,
-      facingYaw: 0, // Facing North toward road
+      facingYaw: Math.PI, // Facing North across road (-Z)
     },
   },
   {
@@ -73,14 +73,14 @@ export const CROSSWALK_ZONES: CrosswalkZone[] = [
       x: 13.0,
       y: 0.16,
       z: -6.6,
-      facingYaw: Math.PI,
+      facingYaw: 0, // Facing South across road (+Z)
     },
     southWaitingPoint: {
       side: 'south',
       x: 13.0,
       y: 0.10,
       z: 5.5,
-      facingYaw: 0,
+      facingYaw: Math.PI, // Facing North across road (-Z)
     },
   },
   {
@@ -98,14 +98,14 @@ export const CROSSWALK_ZONES: CrosswalkZone[] = [
       x: 65.0,
       y: 0.16,
       z: -6.6,
-      facingYaw: Math.PI,
+      facingYaw: 0, // Facing South across road (+Z)
     },
     southWaitingPoint: {
       side: 'south',
       x: 65.0,
       y: 0.10,
       z: 5.5,
-      facingYaw: 0,
+      facingYaw: Math.PI, // Facing North across road (-Z)
     },
   },
 ];

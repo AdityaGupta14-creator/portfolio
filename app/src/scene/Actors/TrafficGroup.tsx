@@ -2,7 +2,8 @@ import React, { useMemo, useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
-import { CROSSWALK_ZONES, crosswalkManager, CarTelemetry } from '../../data/crosswalks';
+import { crosswalkManager, CarTelemetry } from '../../data/crosswalks';
+import { getAllCrosswalkCycles } from '../../sim/crosswalkCycle';
 import { useAppStore } from '../../store/useAppStore';
 import {
   CarType,
@@ -77,6 +78,7 @@ interface RuntimeCar {
   headingYaw: number;
   currentSpeed: number; // m/s
   targetSpeed: number;
+  stopReason: string;
   isBraking: boolean;
   steerAngle: number;
   pitch: number;        // Nose dip when braking
@@ -165,6 +167,7 @@ export const TrafficGroup: React.FC = () => {
         headingYaw: yaw,
         currentSpeed: cfg.cruiseSpeed,
         targetSpeed: cfg.cruiseSpeed,
+        stopReason: 'Cruising normally (CARS_GO)',
         isBraking: false,
         steerAngle: 0,
         pitch: 0,
@@ -292,7 +295,6 @@ export const TrafficGroup: React.FC = () => {
       // ── 2. Crosswalk & Pedestrian Safety Rules ────────────────────────────
       // Determine traffic direction on straightaways (+1 for Eastbound, -1 for Westbound)
       const currentDir: 1 | -1 = pos.z > -0.8 ? 1 : -1;
-      const onStraight = Math.abs(pos.x) < 125;
 
       const telemetry: CarTelemetry = {
         id: car.id,
@@ -305,23 +307,33 @@ export const TrafficGroup: React.FC = () => {
       };
 
       let shouldBrakeForCrosswalk = false;
+      let currentStopReason = 'Cruising normally (CARS_GO)';
 
-      if (onStraight) {
-        for (const cw of CROSSWALK_ZONES) {
-          const { shouldBrake, distToStopLine } = crosswalkManager.shouldCarBrake(telemetry, cw);
-          if (shouldBrake) {
-            shouldBrakeForCrosswalk = true;
-            if (distToStopLine <= 0.4) {
-              minTargetSpeed = 0;
-            } else {
-              // Smooth deceleration toward 3m stop line
-              const brakeFactor = Math.max(0, Math.min(1, distToStopLine / 14.0));
-              minTargetSpeed = Math.min(minTargetSpeed, car.cfg.cruiseSpeed * brakeFactor);
-            }
+      for (const ctrl of getAllCrosswalkCycles()) {
+        const decision = ctrl.evaluateCar(telemetry, false);
+        if (decision.shouldStop) {
+          shouldBrakeForCrosswalk = true;
+          currentStopReason = decision.reason;
+          if (decision.distToStopLine <= 0.3) {
+            minTargetSpeed = 0;
+          } else {
+            // Smooth comfortable deceleration toward 3m stop line
+            const decelSpeed = Math.min(
+              car.cfg.cruiseSpeed,
+              Math.sqrt(Math.max(0, 2 * 3.0 * decision.distToStopLine))
+            );
+            minTargetSpeed = Math.min(minTargetSpeed, decelSpeed);
           }
+        } else if (decision.isCommitted) {
+          currentStopReason = decision.reason;
         }
       }
 
+      if (shouldBrakeForCar) {
+        currentStopReason = 'Queued behind car ahead (6m gap)';
+      }
+
+      car.stopReason = currentStopReason;
       const shouldBrakeAny = shouldBrakeForCar || shouldBrakeForCrosswalk;
       car.targetSpeed = minTargetSpeed;
       car.isBraking = shouldBrakeAny && car.currentSpeed > 0.15;
@@ -422,8 +434,20 @@ export const TrafficGroup: React.FC = () => {
       carTelemetries.push(telemetry);
     });
 
-    // Publish telemetry to shared crosswalk simulation
-    crosswalkManager.updateCars(carTelemetries);
+    // Update crosswalk cycle timers
+    getAllCrosswalkCycles().forEach((ctrl) => {
+      ctrl.update(clampedDelta, 0);
+    });
+
+    if (typeof window !== 'undefined') {
+      (window as any).__carsTelemetry = fleet.map((c) => ({
+        id: c.id,
+        type: c.cfg.type,
+        speed: c.currentSpeed.toFixed(2),
+        isBraking: c.isBraking,
+        stopReason: c.stopReason,
+      }));
+    }
   });
 
   return (
