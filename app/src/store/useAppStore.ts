@@ -40,6 +40,10 @@ export interface AppState {
   isPedestrianDebug: boolean;
   togglePedestrianDebug: () => void;
 
+  // Dev-only Traffic Debug Overlay (Press T)
+  isTrafficDebug: boolean;
+  toggleTrafficDebug: () => void;
+
   // Guided Tour & Building State
   currentBuilding: number | null; // Currently focused or nearest building (0..4, or null)
   tourStep: number;               // Current tour step (0..4)
@@ -219,6 +223,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       nextDebug
         ? '🚶 Pedestrian Debug Overlay: ON (Press P to exit)'
         : '🚶 Pedestrian Debug Overlay: OFF'
+    );
+  },
+
+  // Dev-only Traffic Debug Overlay (Press T)
+  isTrafficDebug:
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).has('debugtraffic') ||
+        new URLSearchParams(window.location.search).has('trafficdebug')
+      : false,
+  toggleTrafficDebug: () => {
+    const nextDebug = !get().isTrafficDebug;
+    set({ isTrafficDebug: nextDebug });
+    get().showToast(
+      nextDebug
+        ? '🚗 Traffic Debug Overlay: ON (Press T to exit)'
+        : '🚗 Traffic Debug Overlay: OFF'
     );
   },
 

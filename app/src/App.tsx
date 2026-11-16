@@ -20,6 +20,7 @@ export const App: React.FC = () => {
   const isGoldenEvening = useAppStore((s) => s.isGoldenEvening);
   const isDebugMode = useAppStore((s) => s.isDebugMode);
   const isTopDownDebug = useAppStore((s) => s.isTopDownDebug);
+  const isTrafficDebug = useAppStore((s) => s.isTrafficDebug);
 
   // Check for /debug/assets route or query parameter (?debug=assets or #/debug/assets)
   const [isDebugRoute, setIsDebugRoute] = useState<boolean>(() => {
@@ -111,6 +112,9 @@ export const App: React.FC = () => {
       } else if ((e.key === 'p' || e.key === 'P') && !isInput) {
         e.preventDefault();
         useAppStore.getState().togglePedestrianDebug();
+      } else if ((e.key === 't' || e.key === 'T') && !isInput) {
+        e.preventDefault();
+        useAppStore.getState().toggleTrafficDebug();
       }
     };
 
@@ -214,6 +218,24 @@ export const App: React.FC = () => {
             className="px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-[11px] font-semibold"
           >
             Exit Top-Down
+          </button>
+        </div>
+      )}
+
+      {/* Traffic Debug HUD Overlay (Press T) */}
+      {isTrafficDebug && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-2 rounded-full bg-slate-900/95 border border-amber-400/60 text-white font-mono text-xs shadow-2xl flex items-center gap-4 backdrop-blur-md pointer-events-auto">
+          <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+          <span className="font-bold tracking-wider text-amber-300">TRAFFIC DEBUG (Press T to toggle)</span>
+          <div className="h-4 w-px bg-slate-700" />
+          <span className="text-slate-300">
+            Lane Paths · Bounding Boxes · Wheel Axes · 6m Minimum Gap
+          </span>
+          <button
+            onClick={() => useAppStore.getState().toggleTrafficDebug()}
+            className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-semibold"
+          >
+            Exit Traffic Debug
           </button>
         </div>
       )}
