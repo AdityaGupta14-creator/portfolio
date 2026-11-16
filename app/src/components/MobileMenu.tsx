@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Sun, Moon } from 'lucide-react';
+import { X, Sun, Sunset, Moon } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { PORTFOLIO_CONTENT } from '../data/content';
 
@@ -8,8 +8,8 @@ export const MobileMenu: React.FC = () => {
   const isMobileMenuOpen = useAppStore((s) => s.isMobileMenuOpen);
   const toggleMobileMenu = useAppStore((s) => s.toggleMobileMenu);
   const focusBuilding = useAppStore((s) => s.focusBuilding);
-  const isGoldenEvening = useAppStore((s) => s.isGoldenEvening);
-  const toggleTheme = useAppStore((s) => s.toggleTheme);
+  const skyMode = useAppStore((s) => s.skyMode);
+  const setSkyMode = useAppStore((s) => s.setSkyMode);
   const viewMode = useAppStore((s) => s.viewMode);
 
   return (
@@ -50,22 +50,42 @@ export const MobileMenu: React.FC = () => {
             ))}
           </div>
 
-          <button
-            onClick={toggleTheme}
-            className="glass-panel text-white px-6 py-3 mt-6 text-base font-bold flex items-center gap-3 border border-white/20 hover:border-amber-400 transition"
-          >
-            {isGoldenEvening ? (
-              <>
-                <Moon className="w-5 h-5 text-amber-300" />
-                <span>Golden Evening</span>
-              </>
-            ) : (
-              <>
-                <Sun className="w-5 h-5 text-amber-400" />
-                <span>Daylight Mode</span>
-              </>
-            )}
-          </button>
+          {/* 3-Way Sky Atmosphere Selector (Morning / Evening / Night) */}
+          <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
+            <button
+              onClick={() => setSkyMode('morning')}
+              className={`glass-panel px-4 py-2.5 text-sm font-bold flex items-center gap-2 border transition rounded-xl ${
+                skyMode === 'morning'
+                  ? 'border-amber-400 bg-amber-400/20 text-amber-300'
+                  : 'border-white/20 text-slate-300 hover:border-white/40'
+              }`}
+            >
+              <Sun className="w-4 h-4 text-amber-400" />
+              <span>Morning</span>
+            </button>
+            <button
+              onClick={() => setSkyMode('evening')}
+              className={`glass-panel px-4 py-2.5 text-sm font-bold flex items-center gap-2 border transition rounded-xl ${
+                skyMode === 'evening'
+                  ? 'border-orange-400 bg-orange-400/20 text-orange-300'
+                  : 'border-white/20 text-slate-300 hover:border-white/40'
+              }`}
+            >
+              <Sunset className="w-4 h-4 text-orange-400" />
+              <span>Evening</span>
+            </button>
+            <button
+              onClick={() => setSkyMode('night')}
+              className={`glass-panel px-4 py-2.5 text-sm font-bold flex items-center gap-2 border transition rounded-xl ${
+                skyMode === 'night'
+                  ? 'border-indigo-400 bg-indigo-400/20 text-indigo-300'
+                  : 'border-white/20 text-slate-300 hover:border-white/40'
+              }`}
+            >
+              <Moon className="w-4 h-4 text-indigo-300" />
+              <span>Night</span>
+            </button>
+          </div>
         </motion.div>
       )}
     </AnimatePresence>

@@ -95,6 +95,7 @@ interface RuntimeCar {
 
 export const TrafficGroup: React.FC = () => {
   const isGoldenEvening = useAppStore((s) => s.isGoldenEvening);
+  const skyMode = useAppStore((s) => s.skyMode);
   const isTrafficDebug = useAppStore((s) => s.isTrafficDebug);
 
   const gltf = useGLTF('/models/cars.web.glb');
@@ -409,8 +410,8 @@ export const TrafficGroup: React.FC = () => {
           car.tailLightRight.material = activeTailMat;
         }
 
-        // Headlights illuminate at dusk (golden evening)
-        const activeHeadMat = isGoldenEvening ? headLightDuskMat : headLightDayMat;
+        // Headlights illuminate at dusk (golden evening) and night
+        const activeHeadMat = (isGoldenEvening || skyMode === 'night') ? headLightDuskMat : headLightDayMat;
         if (car.headLightLeft.material !== activeHeadMat) {
           car.headLightLeft.material = activeHeadMat;
           car.headLightRight.material = activeHeadMat;

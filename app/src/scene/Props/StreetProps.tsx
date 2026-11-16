@@ -13,6 +13,7 @@ interface TreeData {
 
 export const StreetProps: React.FC = () => {
   const isGoldenEvening = useAppStore((s) => s.isGoldenEvening);
+  const skyMode = useAppStore((s) => s.skyMode);
   const treeCanopyRefs = useRef<(THREE.Group | null)[]>([]);
   const lanternMatRef = useRef<THREE.MeshBasicMaterial>(null);
 
@@ -106,9 +107,10 @@ export const StreetProps: React.FC = () => {
       }
     });
 
-    // Lantern warm glow in Golden Evening
+    // Lantern warm glow in Golden Evening & Night
     if (lanternMatRef.current) {
-      const targetColor = isGoldenEvening ? new THREE.Color(0xffd57a) : new THREE.Color(0xffe9a6);
+      const isDark = isGoldenEvening || skyMode === 'night';
+      const targetColor = isDark ? new THREE.Color(0xffd57a) : new THREE.Color(0xffe9a6);
       lanternMatRef.current.color.lerp(targetColor, 0.05);
     }
   });

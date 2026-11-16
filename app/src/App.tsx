@@ -18,7 +18,7 @@ import { CrosswalkDebugPage } from './components/CrosswalkDebugPage';
 
 export const App: React.FC = () => {
   const viewMode = useAppStore((s) => s.viewMode);
-  const isGoldenEvening = useAppStore((s) => s.isGoldenEvening);
+  const skyMode = useAppStore((s) => s.skyMode);
   const isDebugMode = useAppStore((s) => s.isDebugMode);
   const isTopDownDebug = useAppStore((s) => s.isTopDownDebug);
   const isTrafficDebug = useAppStore((s) => s.isTrafficDebug);
@@ -95,11 +95,12 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Synchronize document body background with theme
+  // Synchronize document body background with sky mode
   useEffect(() => {
-    document.body.style.backgroundColor = isGoldenEvening ? '#231d33' : '#dbe3ea';
+    const bg = skyMode === 'night' ? '#090e1a' : skyMode === 'evening' ? '#231d33' : '#dbe3ea';
+    document.body.style.backgroundColor = bg;
     document.body.style.transition = 'background-color 0.8s ease';
-  }, [isGoldenEvening]);
+  }, [skyMode]);
 
   // Global accessibility keyboard shortcuts
   useEffect(() => {

@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Sun, Moon, Eye, Image as ImageIcon, Menu, MapPin, Sparkles } from 'lucide-react';
+import { Sun, Sunset, Moon, Eye, Image as ImageIcon, Menu, MapPin, Sparkles } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { PORTFOLIO_CONTENT } from '../data/content';
 
 export const NavigationHeader: React.FC = () => {
   const currentBuilding = useAppStore((s) => s.currentBuilding);
   const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
-  const isGoldenEvening = useAppStore((s) => s.isGoldenEvening);
-  const toggleTheme = useAppStore((s) => s.toggleTheme);
+  const skyMode = useAppStore((s) => s.skyMode);
+  const cycleSkyMode = useAppStore((s) => s.cycleSkyMode);
   const viewMode = useAppStore((s) => s.viewMode);
   const toggleViewMode = useAppStore((s) => s.toggleViewMode);
   const toggleMobileMenu = useAppStore((s) => s.toggleMobileMenu);
@@ -145,22 +145,27 @@ export const NavigationHeader: React.FC = () => {
           </button>
         )}
 
-        {/* Lighting Toggle Button */}
+        {/* 3-Mode Sky Atmosphere Selector (Morning / Evening / Night) */}
         <button
-          onClick={toggleTheme}
-          className="glass-panel text-white px-3.5 py-2 text-xs sm:text-sm font-bold flex items-center gap-2 hover:border-amber-400 transition shadow-lg"
-          title="Switch Lighting"
-          aria-label="Toggle Time of Day"
+          onClick={cycleSkyMode}
+          className="glass-panel text-white px-3.5 py-2 text-xs sm:text-sm font-bold flex items-center gap-2 hover:border-amber-400 transition shadow-lg select-none"
+          title={`Atmosphere: ${skyMode} (Click to switch)`}
+          aria-label={`Current sky mode: ${skyMode}. Click to switch.`}
         >
-          {isGoldenEvening ? (
+          {skyMode === 'morning' ? (
             <>
-              <Moon className="w-4 h-4 text-amber-300" />
-              <span className="hidden sm:inline">Golden Evening</span>
+              <Sun className="w-4 h-4 text-amber-400" />
+              <span className="hidden sm:inline">Morning</span>
+            </>
+          ) : skyMode === 'evening' ? (
+            <>
+              <Sunset className="w-4 h-4 text-orange-400" />
+              <span className="hidden sm:inline">Evening</span>
             </>
           ) : (
             <>
-              <Sun className="w-4 h-4 text-amber-400" />
-              <span className="hidden sm:inline">Daylight</span>
+              <Moon className="w-4 h-4 text-indigo-300" />
+              <span className="hidden sm:inline">Night</span>
             </>
           )}
         </button>

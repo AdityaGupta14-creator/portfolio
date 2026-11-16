@@ -79,8 +79,8 @@ export const SkyHeroOverlay: React.FC = () => {
           }}
           className="fixed inset-0 z-20 flex flex-col items-center justify-between px-4 sm:px-6 py-16 sm:py-20 text-center select-none"
         >
-          {/* Subtle contrast gradient scrim for maximum text clarity against bright sky */}
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/60 via-slate-950/25 to-transparent pointer-events-none -z-10" />
+          {/* Subtle contrast gradient scrim for text clarity while preserving vibrant sky colors */}
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/25 via-slate-950/10 to-transparent pointer-events-none -z-10" />
 
           {/* Top Status & Performance Bar */}
           <div className="w-full max-w-4xl flex items-center justify-between px-2 pt-2">

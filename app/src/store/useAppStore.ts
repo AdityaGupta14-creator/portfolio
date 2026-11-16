@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { PORTFOLIO_CONTENT } from '../data/content';
 import { FLAGS } from '../config/flags';
+import { SkyMode, getLocalTimeDefaultMode } from '../data/skyModes';
 
 export type ThemeMode = 'day' | 'goldenEvening';
 export type ViewMode = '3d' | 'classic';
@@ -12,6 +13,9 @@ export interface AppState {
   toggleUseOldCity: () => void;
 
   // Theme & Atmosphere
+  skyMode: SkyMode;
+  setSkyMode: (mode: SkyMode) => void;
+  cycleSkyMode: () => void;
   theme: ThemeMode;
   isGoldenEvening: boolean;
   setTheme: (theme: ThemeMode) => void;
@@ -131,6 +135,19 @@ const getInitialIsLoading = (): boolean => {
   return true;
 };
 
+const getInitialSkyMode = (): SkyMode => {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const m = params.get('mode') as SkyMode;
+    if (m === 'morning' || m === 'evening' || m === 'night') return m;
+    const saved = localStorage.getItem('portfolioSkyMode') as SkyMode | null;
+    if (saved === 'morning' || saved === 'evening' || saved === 'night') return saved;
+  }
+  return getLocalTimeDefaultMode();
+};
+
+const initialSkyMode = getInitialSkyMode();
+
 export const useAppStore = create<AppState>((set, get) => ({
   // City asset toggle (USE_OLD_CITY safety flag)
   useOldCity: FLAGS.USE_OLD_CITY,
@@ -141,18 +158,38 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().showToast(next ? 'Switched to Procedural Brownstone City' : 'Switched to Sketchfab City Models');
   },
 
-  // Theme state
-  theme: 'day',
-  isGoldenEvening: false,
-  setTheme: (theme) => set({ theme, isGoldenEvening: theme === 'goldenEvening' }),
-  toggleTheme: () => {
-    const nextTheme: ThemeMode = get().theme === 'day' ? 'goldenEvening' : 'day';
-    set({ theme: nextTheme, isGoldenEvening: nextTheme === 'goldenEvening' });
-    get().showToast(
-      nextTheme === 'goldenEvening'
+  // Sky Mode & Theme state
+  skyMode: initialSkyMode,
+  theme: initialSkyMode === 'evening' ? 'goldenEvening' : 'day',
+  isGoldenEvening: initialSkyMode === 'evening',
+  setSkyMode: (mode: SkyMode) => {
+    localStorage.setItem('portfolioSkyMode', mode);
+    const isEve = mode === 'evening';
+    set({
+      skyMode: mode,
+      isGoldenEvening: isEve,
+      theme: isEve ? 'goldenEvening' : 'day',
+    });
+    const toast =
+      mode === 'morning'
+        ? 'Switched to Crisp Morning Sky ☀️'
+        : mode === 'evening'
         ? 'Switched to Warm Golden Evening Dusk Glow ✨'
-        : 'Switched to Classic Daylight Street View ☀️'
-    );
+        : 'Switched to Midnight Starlit Sky & Moon 🌙';
+    get().showToast(toast);
+  },
+  cycleSkyMode: () => {
+    const current = get().skyMode;
+    const next: SkyMode =
+      current === 'morning' ? 'evening' : current === 'evening' ? 'night' : 'morning';
+    get().setSkyMode(next);
+  },
+  setTheme: (theme) => {
+    const mode: SkyMode = theme === 'goldenEvening' ? 'evening' : 'morning';
+    get().setSkyMode(mode);
+  },
+  toggleTheme: () => {
+    get().cycleSkyMode();
   },
 
   // View mode
