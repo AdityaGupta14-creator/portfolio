@@ -5,7 +5,8 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { useAppStore } from '../../store/useAppStore';
 import { BUILDING_PROXIES, RAW_BOUNDS } from '../../data/buildings';
 import { SpeechBubble } from './SpeechBubble';
-import { attachFaceAccessories } from './AvatarAccessories';
+import { attachGlassesToHead } from '../Glasses';
+import { DEFAULT_GLASSES_CONFIG } from '../../data/glassesConfig';
 
 // ── Waypoint & Stop Constants ────────────────────────────────────────────────
 // 5 Hero Building Stops along the North Sidewalk (in front of each building entrance)
@@ -241,8 +242,8 @@ export const HostCharacter: React.FC = () => {
         // Apply clean tailored materials and shadow casting
         applyAvatarMaterials(walkingFbx);
 
-        // Attach realistic eyeballs and glasses to the host avatar
-        attachFaceAccessories(walkingFbx, { glasses: 'sunglasses', addEyeballs: true });
+        // Attach proper sunglasses to host avatar head bone (mixamorigHead)
+        attachGlassesToHead(walkingFbx, DEFAULT_GLASSES_CONFIG);
         if (typeof window !== 'undefined') {
           (window as any).__HOST_AVATAR__ = walkingFbx;
         }

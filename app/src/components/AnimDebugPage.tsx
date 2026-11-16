@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
@@ -11,7 +11,12 @@ import {
   retargetMixamoToRigify,
   RetargetResult,
 } from '../utils/retargeting';
-import { attachFaceAccessories } from '../scene/Actors/AvatarAccessories';
+import { attachGlassesToHead } from '../scene/Glasses';
+import {
+  GlassesConfig,
+  GlassesStyle,
+  DEFAULT_GLASSES_CONFIG,
+} from '../data/glassesConfig';
 
 // Pre-configure MeshoptDecoder
 useGLTF.preload('/models/characters.opt.glb', true, true, (loader) => {
@@ -145,6 +150,7 @@ interface MixamoAvatarViewerProps {
   onAnalysisReady: (walking: FBXAnalysisResult, waving: FBXAnalysisResult) => void;
   onEyeDiagReady?: (diags: EyeMeshDiag[]) => void;
   wireframe: boolean;
+  glassesConfig: GlassesConfig;
 }
 
 const MixamoAvatarViewer: React.FC<MixamoAvatarViewerProps> = ({
@@ -152,6 +158,7 @@ const MixamoAvatarViewer: React.FC<MixamoAvatarViewerProps> = ({
   onAnalysisReady,
   onEyeDiagReady,
   wireframe,
+  glassesConfig,
 }) => {
   const [avatarGroup, setAvatarGroup] = useState<THREE.Group | null>(null);
   const [mixer, setMixer] = useState<THREE.AnimationMixer | null>(null);
@@ -336,22 +343,59 @@ const MixamoAvatarViewer: React.FC<MixamoAvatarViewerProps> = ({
             child.castShadow = true;
             child.receiveShadow = true;
             const mesh = child as THREE.Mesh;
-            if (mesh.material) {
-              const baseColor =
-                (mesh.material as THREE.MeshStandardMaterial).color || new THREE.Color(0xd4d4d8);
+            const name = mesh.name.toLowerCase();
+
+            let color = 0x27303f; // Default tailored navy suit
+            let roughness = 0.68;
+            let metalness = 0.08;
+
+            if (name.includes('body') || name.includes('skin') || name.includes('face') || name.includes('head')) {
+              color = 0xdfab8c;
+              roughness = 0.58;
+              metalness = 0.02;
+            } else if (
+              name.includes('suit') ||
+              name.includes('coat') ||
+              name.includes('jacket') ||
+              name.includes('pants') ||
+              name.includes('trousers')
+            ) {
+              color = 0x27303f;
+              roughness = 0.65;
+              metalness = 0.05;
+            } else if (name.includes('shirt')) {
+              color = 0xf8fafc;
+              roughness = 0.78;
+              metalness = 0.02;
+            } else if (name.includes('shoe') || name.includes('boot')) {
+              color = 0x11141c;
+              roughness = 0.35;
+              metalness = 0.22;
+            } else if (name.includes('eyelash') || name.includes('lash')) {
+              mesh.visible = false;
+              return;
+            } else if (name.includes('hair')) {
               mesh.material = new THREE.MeshStandardMaterial({
-                color: baseColor,
-                roughness: 0.5,
-                metalness: 0.1,
+                color: 0x18181b,
+                roughness: 0.85,
+                side: THREE.FrontSide,
                 wireframe: wireframe,
-                side: THREE.DoubleSide,
               });
+              return;
             }
+
+            mesh.material = new THREE.MeshStandardMaterial({
+              color,
+              roughness,
+              metalness,
+              side: THREE.DoubleSide,
+              wireframe: wireframe,
+            });
           }
         });
 
-        // Attach face accessories (eyeballs and glasses)
-        attachFaceAccessories(avatar, { glasses: 'clear', addEyeballs: true });
+        // Attach glasses with user/default config
+        attachGlassesToHead(avatar, glassesConfig);
 
         // Setup AnimationMixer and Walk Action
         const animMixer = new THREE.AnimationMixer(avatar);
@@ -367,6 +411,7 @@ const MixamoAvatarViewer: React.FC<MixamoAvatarViewerProps> = ({
         setAvatarGroup(avatar);
         if (typeof window !== 'undefined') {
           (window as any).__DEBUG_AVATAR__ = avatar;
+          (window as any).THREE = THREE;
         }
         onAnalysisReady(walkAnalysis, DEFAULT_WAVE_ANALYSIS);
 
@@ -500,6 +545,13 @@ const MixamoAvatarViewer: React.FC<MixamoAvatarViewerProps> = ({
       }
     });
   }, [avatarGroup, wireframe]);
+
+  // Live update attached glasses when tuning sliders change
+  useEffect(() => {
+    if (avatarGroup) {
+      attachGlassesToHead(avatarGroup, glassesConfig);
+    }
+  }, [avatarGroup, glassesConfig]);
 
   // Animation frame loop
   useFrame((_, delta) => {
@@ -963,6 +1015,43 @@ const SideBySideRetargetViewer: React.FC<SideBySideRetargetViewerProps> = ({
   );
 };
 
+const CameraController: React.FC<{
+  preset: 'front' | 'side' | 'threeQuarter' | 'full';
+  controlsRef: React.RefObject<any>;
+}> = ({ preset, controlsRef }) => {
+  const { camera } = useThree();
+
+  useEffect(() => {
+    if (preset === 'front') {
+      camera.position.set(0, 1.62, 0.55);
+      if (controlsRef.current) {
+        controlsRef.current.target.set(0, 1.62, 0);
+        controlsRef.current.update();
+      }
+    } else if (preset === 'side') {
+      camera.position.set(0.55, 1.62, 0);
+      if (controlsRef.current) {
+        controlsRef.current.target.set(0, 1.62, 0);
+        controlsRef.current.update();
+      }
+    } else if (preset === 'threeQuarter') {
+      camera.position.set(0.40, 1.62, 0.45);
+      if (controlsRef.current) {
+        controlsRef.current.target.set(0, 1.62, 0);
+        controlsRef.current.update();
+      }
+    } else if (preset === 'full') {
+      camera.position.set(0, 1.2, 3.2);
+      if (controlsRef.current) {
+        controlsRef.current.target.set(0, 0.9, 0);
+        controlsRef.current.update();
+      }
+    }
+  }, [preset, camera, controlsRef]);
+
+  return null;
+};
+
 // ── Main Page Component: /debug/anim ─────────────────────────────────────────
 export const AnimDebugPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'retarget' | 'mixamo' | 'rigify'>(() => {
@@ -971,7 +1060,7 @@ export const AnimDebugPage: React.FC = () => {
       const t = p.get('tab');
       if (t === 'mixamo' || t === 'rigify' || t === 'retarget') return t;
     }
-    return 'retarget'; // Default to Side-by-Side Retargeting!
+    return 'mixamo'; // Default to Mixamo Host Avatar Viewer!
   });
   const [currentAnim, setCurrentAnim] = useState<'walk' | 'wave' | 'stop'>(() => {
     if (typeof window !== 'undefined') {
@@ -982,6 +1071,20 @@ export const AnimDebugPage: React.FC = () => {
     return 'walk';
   });
   const [wireframe, setWireframe] = useState<boolean>(false);
+  const [glassesConfig, setGlassesConfig] = useState<GlassesConfig>(DEFAULT_GLASSES_CONFIG);
+  const [cameraPreset, setCameraPreset] = useState<'front' | 'side' | 'threeQuarter' | 'full'>('front');
+  const controlsRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__setGlassesConfig = (cfg: Partial<GlassesConfig>) => {
+        setGlassesConfig((prev) => ({ ...prev, ...cfg }));
+      };
+      (window as any).__getGlassesConfig = () => glassesConfig;
+      (window as any).__setCameraPreset = (p: 'front' | 'side' | 'threeQuarter' | 'full') => setCameraPreset(p);
+      (window as any).__setCurrentAnim = (a: 'walk' | 'wave' | 'stop') => setCurrentAnim(a);
+    }
+  }, [glassesConfig]);
   const [selectedRigifyIndex, setSelectedRigifyIndex] = useState<number>(() => {
     if (typeof window !== 'undefined') {
       const p = new URLSearchParams(window.location.search);
@@ -1002,7 +1105,6 @@ export const AnimDebugPage: React.FC = () => {
   const [walkAnalysis, setWalkAnalysis] = useState<FBXAnalysisResult | null>(DEFAULT_WALK_ANALYSIS);
   const [waveAnalysis, setWaveAnalysis] = useState<FBXAnalysisResult | null>(DEFAULT_WAVE_ANALYSIS);
   const [retargetReport, setRetargetReport] = useState<RetargetResult | null>(null);
-  const [eyeDiags, setEyeDiags] = useState<EyeMeshDiag[]>([]);
 
   const handleAnalysisReady = (walking: FBXAnalysisResult, waving: FBXAnalysisResult) => {
     setWalkAnalysis(walking);
@@ -1129,8 +1231,8 @@ export const AnimDebugPage: React.FC = () => {
                 <MixamoAvatarViewer
                   currentAnim={currentAnim}
                   onAnalysisReady={handleAnalysisReady}
-                  onEyeDiagReady={setEyeDiags}
                   wireframe={wireframe}
+                  glassesConfig={glassesConfig}
                 />
               ) : (
                 <SketchfabRigifyViewer
@@ -1140,13 +1242,57 @@ export const AnimDebugPage: React.FC = () => {
               )}
             </Suspense>
 
+            {activeTab === 'mixamo' && (
+              <CameraController preset={cameraPreset} controlsRef={controlsRef} />
+            )}
+
             <OrbitControls
-              target={[0, 0.9, 0]}
+              ref={controlsRef}
+              target={activeTab === 'mixamo' && cameraPreset !== 'full' ? [0, 1.62, 0] : [0, 0.9, 0]}
               maxPolarAngle={Math.PI / 2 - 0.02}
-              minDistance={1.2}
+              minDistance={0.25}
               maxDistance={12}
             />
           </Canvas>
+
+          {/* Camera Angle Presets for Mixamo Tab */}
+          {activeTab === 'mixamo' && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-slate-900/90 border border-slate-700 backdrop-blur-md rounded-xl p-1 z-10 shadow-xl">
+              <span className="text-[10px] font-mono text-slate-400 px-2">Camera:</span>
+              <button
+                onClick={() => setCameraPreset('front')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                  cameraPreset === 'front' ? 'bg-amber-400 text-slate-950 font-bold shadow' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Front Close-up
+              </button>
+              <button
+                onClick={() => setCameraPreset('side')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                  cameraPreset === 'side' ? 'bg-amber-400 text-slate-950 font-bold shadow' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Side Profile
+              </button>
+              <button
+                onClick={() => setCameraPreset('threeQuarter')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                  cameraPreset === 'threeQuarter' ? 'bg-amber-400 text-slate-950 font-bold shadow' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                3/4 View
+              </button>
+              <button
+                onClick={() => setCameraPreset('full')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                  cameraPreset === 'full' ? 'bg-amber-400 text-slate-950 font-bold shadow' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Full Body
+              </button>
+            </div>
+          )}
 
           {/* Top Comparison Floating Pill Bar */}
           {activeTab === 'retarget' && (
@@ -1466,72 +1612,171 @@ export const AnimDebugPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Eye Materials & Meshes Diagnostic Report (Requirement 1) */}
-              <div className="bg-slate-950/80 rounded-xl p-3.5 border border-amber-500/40 space-y-3">
+              {/* Host Glasses Tuning Panel */}
+              <div className="bg-slate-950/80 rounded-xl p-3.5 border border-amber-500/50 space-y-3">
                 <div className="font-bold text-amber-300 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    <Info className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Eye Materials & Meshes Diagnosis</span>
+                    <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Host Glasses Tuning Panel</span>
                   </span>
-                  <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-mono">
-                    {eyeDiags.length} MATCHES
-                  </span>
+                  <button
+                    onClick={() => setGlassesConfig(DEFAULT_GLASSES_CONFIG)}
+                    className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-0.5 rounded transition"
+                  >
+                    Reset
+                  </button>
                 </div>
 
-                {eyeDiags.length === 0 ? (
-                  <div className="text-[11px] text-slate-400 font-sans">
-                    Analyzing avatar meshes... (no eye meshes detected yet)
+                {/* Style Dropdown */}
+                <div className="space-y-1">
+                  <label className="text-[11px] text-slate-400">Glasses Style Preset:</label>
+                  <select
+                    value={glassesConfig.style}
+                    onChange={(e) =>
+                      setGlassesConfig((prev) => ({ ...prev, style: e.target.value as GlassesStyle }))
+                    }
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400 font-mono"
+                  >
+                    <option value="sunglasses">sunglasses (Dark Tint #111)</option>
+                    <option value="clear">clear (Transparent Prescriptive)</option>
+                    <option value="round">round (Retro Wire Rim)</option>
+                  </select>
+                </div>
+
+                {/* Slider: Position X (Nose Centering) */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-slate-400">Position X (Nose Centering):</span>
+                    <span className="text-amber-400 font-mono font-bold">
+                      {glassesConfig.position[0].toFixed(3)} m
+                    </span>
                   </div>
-                ) : (
-                  <div className="space-y-2.5">
-                    {eyeDiags.map((d, i) => (
-                      <div
-                        key={i}
-                        className="bg-slate-900/90 rounded-lg p-2.5 border border-slate-800 text-[10px] font-mono space-y-1.5"
-                      >
-                        <div className="font-bold text-amber-300 flex items-center justify-between border-b border-slate-800 pb-1">
-                          <span>Mesh: {d.meshName}</span>
-                          <span className="text-slate-400">Mat: {d.matName}</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-slate-300">
-                          <div>
-                            hasMap:{' '}
-                            <span className={d.hasMap ? 'text-emerald-400' : 'text-rose-400'}>
-                              {String(d.hasMap)}
-                            </span>
-                          </div>
-                          <div>
-                            color: <span className="text-slate-200">{d.color}</span>
-                          </div>
-                          <div>
-                            transparent: <span className="text-slate-200">{String(d.transparent)}</span>
-                          </div>
-                          <div>
-                            opacity: <span className="text-slate-200">{d.opacity}</span>
-                          </div>
-                          <div>
-                            alphaTest: <span className="text-slate-200">{d.alphaTest}</span>
-                          </div>
-                          <div>
-                            depthWrite: <span className="text-slate-200">{String(d.depthWrite)}</span>
-                          </div>
-                          <div>
-                            side: <span className="text-slate-200">{d.side}</span>
-                          </div>
-                          <div>
-                            textureLoaded:{' '}
-                            <span className={d.textureLoaded ? 'text-emerald-400' : 'text-amber-400'}>
-                              {String(d.textureLoaded)}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="text-[9px] text-slate-400 pt-1 border-t border-slate-800/60">
-                          Texture status: {d.textureStatus}
-                        </div>
-                      </div>
-                    ))}
+                  <input
+                    type="range"
+                    min="-0.04"
+                    max="0.04"
+                    step="0.001"
+                    value={glassesConfig.position[0]}
+                    onChange={(e) =>
+                      setGlassesConfig((prev) => ({
+                        ...prev,
+                        position: [parseFloat(e.target.value), prev.position[1], prev.position[2]],
+                      }))
+                    }
+                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
+                  />
+                </div>
+
+                {/* Slider: Position Y (Eye Height) */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-slate-400">Position Y (Eye Height):</span>
+                    <span className="text-amber-400 font-mono font-bold">
+                      {glassesConfig.position[1].toFixed(3)} m
+                    </span>
                   </div>
-                )}
+                  <input
+                    type="range"
+                    min="0.08"
+                    max="0.16"
+                    step="0.001"
+                    value={glassesConfig.position[1]}
+                    onChange={(e) =>
+                      setGlassesConfig((prev) => ({
+                        ...prev,
+                        position: [prev.position[0], parseFloat(e.target.value), prev.position[2]],
+                      }))
+                    }
+                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
+                  />
+                </div>
+
+                {/* Slider: Position Z (Face Depth) */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-slate-400">Position Z (Face Depth):</span>
+                    <span className="text-amber-400 font-mono font-bold">
+                      {glassesConfig.position[2].toFixed(3)} m
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.08"
+                    max="0.16"
+                    step="0.001"
+                    value={glassesConfig.position[2]}
+                    onChange={(e) =>
+                      setGlassesConfig((prev) => ({
+                        ...prev,
+                        position: [prev.position[0], prev.position[1], parseFloat(e.target.value)],
+                      }))
+                    }
+                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
+                  />
+                </div>
+
+                {/* Slider: Rotation X (Pitch Tilt) */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-slate-400">Rotation X (Pitch Angle):</span>
+                    <span className="text-amber-400 font-mono font-bold">
+                      {glassesConfig.rotationX.toFixed(1)}°
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-20"
+                    max="20"
+                    step="0.5"
+                    value={glassesConfig.rotationX}
+                    onChange={(e) =>
+                      setGlassesConfig((prev) => ({
+                        ...prev,
+                        rotationX: parseFloat(e.target.value),
+                      }))
+                    }
+                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
+                  />
+                </div>
+
+                {/* Slider: Scale Multiplier */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-slate-400">Scale Multiplier:</span>
+                    <span className="text-amber-400 font-mono font-bold">
+                      {glassesConfig.scale.toFixed(2)}x (~{(0.14 * glassesConfig.scale).toFixed(2)}m)
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.70"
+                    max="1.30"
+                    step="0.01"
+                    value={glassesConfig.scale}
+                    onChange={(e) =>
+                      setGlassesConfig((prev) => ({
+                        ...prev,
+                        scale: parseFloat(e.target.value),
+                      }))
+                    }
+                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
+                  />
+                </div>
+
+                {/* Copy-Paste Code Block */}
+                <div className="pt-2 border-t border-slate-800">
+                  <div className="text-[10px] text-slate-400 font-mono mb-1 font-semibold">
+                    Copy-Paste Configuration Block:
+                  </div>
+                  <pre className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-[10px] font-mono text-emerald-300 overflow-x-auto select-all">
+{`export const DEFAULT_GLASSES_CONFIG: GlassesConfig = {
+  position: [${glassesConfig.position[0].toFixed(3)}, ${glassesConfig.position[1].toFixed(3)}, ${glassesConfig.position[2].toFixed(3)}],
+  rotationX: ${glassesConfig.rotationX.toFixed(1)},
+  scale: ${glassesConfig.scale.toFixed(2)},
+  style: '${glassesConfig.style}',
+};`}
+                  </pre>
+                </div>
               </div>
 
               {/* 2. Waving.fbx Analysis */}
