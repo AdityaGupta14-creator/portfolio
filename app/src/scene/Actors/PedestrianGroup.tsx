@@ -21,6 +21,7 @@ import {
   CrosswalkZone,
   crosswalkManager,
 } from '../../data/crosswalks';
+import { attachFaceAccessories, GlassesType } from './AvatarAccessories';
 
 // Pre-configure MeshoptDecoder for static extras GLTF loading
 useGLTF.preload('/models/characters.opt.glb', true, true, (loader) => {
@@ -129,9 +130,16 @@ function applyClonedMaterials(avatar: THREE.Object3D, config: PedestrianInitConf
         color = config.skinColor;
         roughness = 0.58;
         metalness = 0.02;
-      } else if (name.includes('hair') || name.includes('eyelash')) {
-        color = config.hairColor;
-        roughness = 0.85;
+      } else if (name.includes('eyelash') || name.includes('lash')) {
+        mesh.visible = false;
+        return;
+      } else if (name.includes('hair')) {
+        mesh.material = new THREE.MeshStandardMaterial({
+          color: config.hairColor,
+          roughness: 0.85,
+          side: THREE.FrontSide,
+        });
+        return;
       } else if (name.includes('belt')) {
         color = 0x111317;
         roughness = 0.40;
@@ -142,6 +150,7 @@ function applyClonedMaterials(avatar: THREE.Object3D, config: PedestrianInitConf
         color,
         roughness,
         metalness,
+        side: THREE.DoubleSide,
       });
     }
   });
@@ -325,6 +334,11 @@ const MixamoWalkingPedestrians: React.FC = () => {
           clonedAvatar.position.set(-scaledCenter.x, -scaledBox.min.y, -scaledCenter.z);
 
           applyClonedMaterials(clonedAvatar, config);
+
+          // Vary glasses on about half the pedestrians (sunglasses, clear, or none)
+          const glassesType: GlassesType =
+            config.id % 4 === 0 ? 'sunglasses' : config.id % 4 === 1 ? 'clear' : config.id === 6 ? 'sunglasses' : 'none';
+          attachFaceAccessories(clonedAvatar, { glasses: glassesType, addEyeballs: true });
 
           const mixer = new THREE.AnimationMixer(clonedAvatar);
           const walkAction = mixer.clipAction(walkClip);

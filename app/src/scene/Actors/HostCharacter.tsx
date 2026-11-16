@@ -5,6 +5,7 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { useAppStore } from '../../store/useAppStore';
 import { BUILDING_PROXIES, RAW_BOUNDS } from '../../data/buildings';
 import { SpeechBubble } from './SpeechBubble';
+import { attachFaceAccessories } from './AvatarAccessories';
 
 // ── Waypoint & Stop Constants ────────────────────────────────────────────────
 // 5 Hero Building Stops along the North Sidewalk (in front of each building entrance)
@@ -94,9 +95,16 @@ function applyAvatarMaterials(avatar: THREE.Group) {
         color = 0x11141c;
         roughness = 0.35;
         metalness = 0.22;
-      } else if (name.includes('hair') || name.includes('eyelash')) {
-        color = 0x18181b;
-        roughness = 0.85;
+      } else if (name.includes('eyelash') || name.includes('lash')) {
+        mesh.visible = false;
+        return;
+      } else if (name.includes('hair')) {
+        mesh.material = new THREE.MeshStandardMaterial({
+          color: 0x18181b,
+          roughness: 0.85,
+          side: THREE.FrontSide,
+        });
+        return;
       } else if (name.includes('belt')) {
         color = 0x09090b;
         roughness = 0.4;
@@ -107,6 +115,7 @@ function applyAvatarMaterials(avatar: THREE.Group) {
         color,
         roughness,
         metalness,
+        side: THREE.DoubleSide,
       });
     }
   });
@@ -232,6 +241,12 @@ export const HostCharacter: React.FC = () => {
         // Apply clean tailored materials and shadow casting
         applyAvatarMaterials(walkingFbx);
 
+        // Attach realistic eyeballs and glasses to the host avatar
+        attachFaceAccessories(walkingFbx, { glasses: 'sunglasses', addEyeballs: true });
+        if (typeof window !== 'undefined') {
+          (window as any).__HOST_AVATAR__ = walkingFbx;
+        }
+
         // 1. Prepare Walking animation clip: remove X/Z forward root motion so it walks in place
         const walkClipRaw = walkingFbx.animations[0];
         const walkClip = walkClipRaw ? walkClipRaw.clone() : new THREE.AnimationClip('Walk', 0, []);
@@ -322,6 +337,16 @@ export const HostCharacter: React.FC = () => {
     }
 
     if (typeof window !== 'undefined') {
+      let headWorldPos: number[] | null = null;
+      if (rootRef.current) {
+        const headBone = rootRef.current.getObjectByName('mixamorigHead');
+        if (headBone) {
+          const wp = new THREE.Vector3();
+          headBone.getWorldPosition(wp);
+          headWorldPos = wp.toArray();
+        }
+      }
+
       (window as any).__HOST_DEBUG__ = {
         hasAvatar: !!avatarGroup,
         hasMixer: !!mixerRef.current,
@@ -332,6 +357,8 @@ export const HostCharacter: React.FC = () => {
         state: hostStateRef.current,
         currentPos: currentPos.current.toArray(),
         activeTarget: activeWaypointTarget.current.toArray(),
+        headWorldPos,
+        currentYaw: currentYaw.current,
         scrollProgress,
         focusedBuildingIndex,
       };

@@ -227,6 +227,14 @@ export const CameraController: React.FC = () => {
       currentLookAt.current.lerp(targetLookAt.current, 0.06);
     }
 
+    // Debug Camera Override (allows automated tooling or debugging scripts to frame targets)
+    if (typeof window !== 'undefined' && (window as any).__CAM_OVERRIDE__) {
+      const o = (window as any).__CAM_OVERRIDE__;
+      camera.position.set(o.pos[0], o.pos[1], o.pos[2]);
+      camera.lookAt(o.look[0], o.look[1], o.look[2]);
+      return;
+    }
+
     camera.position.copy(currentCamPos.current);
     camera.lookAt(currentLookAt.current);
 

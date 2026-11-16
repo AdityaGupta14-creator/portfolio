@@ -11,6 +11,7 @@ import {
   retargetMixamoToRigify,
   RetargetResult,
 } from '../utils/retargeting';
+import { attachFaceAccessories } from '../scene/Actors/AvatarAccessories';
 
 // Pre-configure MeshoptDecoder
 useGLTF.preload('/models/characters.opt.glb', true, true, (loader) => {
@@ -98,6 +99,20 @@ export const MIXAMO_UNIQUE_BONES: string[] = [
   'mixamorigRightToe_End',
 ];
 
+export interface EyeMeshDiag {
+  meshName: string;
+  matName: string;
+  hasMap: boolean;
+  color: string;
+  transparent: boolean;
+  opacity: number;
+  alphaTest: number;
+  depthWrite: boolean;
+  side: string;
+  textureLoaded: boolean;
+  textureStatus: string;
+}
+
 export const DEFAULT_WALK_ANALYSIS: FBXAnalysisResult = {
   fileName: 'Walking.fbx',
   hasSkinnedMesh: true,
@@ -128,12 +143,14 @@ export const DEFAULT_WAVE_ANALYSIS: FBXAnalysisResult = {
 interface MixamoAvatarViewerProps {
   currentAnim: 'walk' | 'wave' | 'stop';
   onAnalysisReady: (walking: FBXAnalysisResult, waving: FBXAnalysisResult) => void;
+  onEyeDiagReady?: (diags: EyeMeshDiag[]) => void;
   wireframe: boolean;
 }
 
 const MixamoAvatarViewer: React.FC<MixamoAvatarViewerProps> = ({
   currentAnim,
   onAnalysisReady,
+  onEyeDiagReady,
   wireframe,
 }) => {
   const [avatarGroup, setAvatarGroup] = useState<THREE.Group | null>(null);
@@ -169,10 +186,98 @@ const MixamoAvatarViewer: React.FC<MixamoAvatarViewerProps> = ({
         // Analyze Walking.fbx
         let walkHasSkinnedMesh = false;
         const walkBones: string[] = [];
+        const eyeDiags: EyeMeshDiag[] = [];
+        const allMeshes: Array<{ meshName: string; matName: string }> = [];
+
         walkingFbx.traverse((child) => {
           if ((child as THREE.SkinnedMesh).isSkinnedMesh) walkHasSkinnedMesh = true;
           if ((child as THREE.Bone).isBone) walkBones.push(child.name);
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+            mats.forEach((mat) => {
+              const meshName = mesh.name || 'unnamed_mesh';
+              const matName = mat ? mat.name || 'unnamed_mat' : 'none';
+              allMeshes.push({ meshName, matName });
+              const combined = (meshName + ' ' + matName).toLowerCase();
+              const isEyeTarget = /eye|iris|lash|cornea|pupil|brow|sclera/i.test(combined);
+
+              const stdMat = mat as THREE.MeshStandardMaterial;
+              const hasMap = Boolean(stdMat && stdMat.map);
+              let textureLoaded = false;
+              let textureStatus = 'no map';
+              if (hasMap && stdMat.map && stdMat.map.image) {
+                const img = stdMat.map.image;
+                if (img.width > 1 && img.height > 1) {
+                  textureLoaded = true;
+                  textureStatus = `${img.width}x${img.height} loaded`;
+                } else {
+                  textureLoaded = false;
+                  textureStatus = 'empty / 1x1 placeholder';
+                }
+              }
+
+              const colorStr = stdMat && stdMat.color ? '#' + stdMat.color.getHexString() : 'none';
+              const sideStr = stdMat
+                ? stdMat.side === 0
+                  ? 'FrontSide'
+                  : stdMat.side === 1
+                  ? 'BackSide'
+                  : 'DoubleSide'
+                : 'none';
+
+              if (isEyeTarget) {
+                eyeDiags.push({
+                  meshName,
+                  matName,
+                  hasMap,
+                  color: colorStr,
+                  transparent: Boolean(stdMat && stdMat.transparent),
+                  opacity: stdMat ? stdMat.opacity : 1,
+                  alphaTest: stdMat ? stdMat.alphaTest : 0,
+                  depthWrite: Boolean(stdMat && stdMat.depthWrite),
+                  side: sideStr,
+                  textureLoaded,
+                  textureStatus,
+                });
+              }
+            });
+          }
         });
+
+        console.log('[FBX Mesh Inventory]:', allMeshes);
+        console.log('[FBX Eye Diagnostics]:', eyeDiags);
+
+        const lashMesh = walkingFbx.getObjectByName('Ch23_Eyelashes');
+        const headBone = walkingFbx.getObjectByName('mixamorigHead');
+        let headMetrics = null;
+        if (lashMesh && headBone) {
+          walkingFbx.updateMatrixWorld(true);
+          const lashBox = new THREE.Box3().setFromObject(lashMesh);
+          const lashCenter = lashBox.getCenter(new THREE.Vector3());
+          const lashSize = lashBox.getSize(new THREE.Vector3());
+
+          const lashInHeadSpace = headBone.worldToLocal(lashCenter.clone());
+
+          headMetrics = {
+            lashMin: lashBox.min.toArray(),
+            lashMax: lashBox.max.toArray(),
+            lashCenter: lashCenter.toArray(),
+            lashSize: lashSize.toArray(),
+            lashInHeadSpace: lashInHeadSpace.toArray(),
+            headBoneLocalPos: headBone.position.toArray(),
+          };
+          console.log('[Head & Eye Metrics]:', headMetrics);
+        }
+
+        if (typeof window !== 'undefined') {
+          (window as any).__eyeDiags = eyeDiags;
+          (window as any).__allMeshes = allMeshes;
+          (window as any).__headMetrics = headMetrics;
+        }
+        if (onEyeDiagReady) {
+          onEyeDiagReady(eyeDiags);
+        }
         const walkUniqueBones = Array.from(new Set(walkBones));
 
         const walkBox = new THREE.Box3().setFromObject(walkingFbx);
@@ -239,10 +344,14 @@ const MixamoAvatarViewer: React.FC<MixamoAvatarViewerProps> = ({
                 roughness: 0.5,
                 metalness: 0.1,
                 wireframe: wireframe,
+                side: THREE.DoubleSide,
               });
             }
           }
         });
+
+        // Attach face accessories (eyeballs and glasses)
+        attachFaceAccessories(avatar, { glasses: 'clear', addEyeballs: true });
 
         // Setup AnimationMixer and Walk Action
         const animMixer = new THREE.AnimationMixer(avatar);
@@ -256,6 +365,9 @@ const MixamoAvatarViewer: React.FC<MixamoAvatarViewerProps> = ({
         actionsRef.current.walk = walkAction;
         setMixer(animMixer);
         setAvatarGroup(avatar);
+        if (typeof window !== 'undefined') {
+          (window as any).__DEBUG_AVATAR__ = avatar;
+        }
         onAnalysisReady(walkAnalysis, DEFAULT_WAVE_ANALYSIS);
 
         // 2. Now load Waving.fbx asynchronously to extract waving clip
@@ -333,7 +445,7 @@ const MixamoAvatarViewer: React.FC<MixamoAvatarViewerProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [onAnalysisReady]);
+  }, [onAnalysisReady, onEyeDiagReady]);
 
   // Handle animation switching with 0.3s crossfade
   useEffect(() => {
@@ -890,6 +1002,7 @@ export const AnimDebugPage: React.FC = () => {
   const [walkAnalysis, setWalkAnalysis] = useState<FBXAnalysisResult | null>(DEFAULT_WALK_ANALYSIS);
   const [waveAnalysis, setWaveAnalysis] = useState<FBXAnalysisResult | null>(DEFAULT_WAVE_ANALYSIS);
   const [retargetReport, setRetargetReport] = useState<RetargetResult | null>(null);
+  const [eyeDiags, setEyeDiags] = useState<EyeMeshDiag[]>([]);
 
   const handleAnalysisReady = (walking: FBXAnalysisResult, waving: FBXAnalysisResult) => {
     setWalkAnalysis(walking);
@@ -1016,6 +1129,7 @@ export const AnimDebugPage: React.FC = () => {
                 <MixamoAvatarViewer
                   currentAnim={currentAnim}
                   onAnalysisReady={handleAnalysisReady}
+                  onEyeDiagReady={setEyeDiags}
                   wireframe={wireframe}
                 />
               ) : (
@@ -1350,6 +1464,74 @@ export const AnimDebugPage: React.FC = () => {
                     from mixamorigHips.position track; preserved vertical hip bounce.
                   </span>
                 </div>
+              </div>
+
+              {/* Eye Materials & Meshes Diagnostic Report (Requirement 1) */}
+              <div className="bg-slate-950/80 rounded-xl p-3.5 border border-amber-500/40 space-y-3">
+                <div className="font-bold text-amber-300 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Eye Materials & Meshes Diagnosis</span>
+                  </span>
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-mono">
+                    {eyeDiags.length} MATCHES
+                  </span>
+                </div>
+
+                {eyeDiags.length === 0 ? (
+                  <div className="text-[11px] text-slate-400 font-sans">
+                    Analyzing avatar meshes... (no eye meshes detected yet)
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {eyeDiags.map((d, i) => (
+                      <div
+                        key={i}
+                        className="bg-slate-900/90 rounded-lg p-2.5 border border-slate-800 text-[10px] font-mono space-y-1.5"
+                      >
+                        <div className="font-bold text-amber-300 flex items-center justify-between border-b border-slate-800 pb-1">
+                          <span>Mesh: {d.meshName}</span>
+                          <span className="text-slate-400">Mat: {d.matName}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-slate-300">
+                          <div>
+                            hasMap:{' '}
+                            <span className={d.hasMap ? 'text-emerald-400' : 'text-rose-400'}>
+                              {String(d.hasMap)}
+                            </span>
+                          </div>
+                          <div>
+                            color: <span className="text-slate-200">{d.color}</span>
+                          </div>
+                          <div>
+                            transparent: <span className="text-slate-200">{String(d.transparent)}</span>
+                          </div>
+                          <div>
+                            opacity: <span className="text-slate-200">{d.opacity}</span>
+                          </div>
+                          <div>
+                            alphaTest: <span className="text-slate-200">{d.alphaTest}</span>
+                          </div>
+                          <div>
+                            depthWrite: <span className="text-slate-200">{String(d.depthWrite)}</span>
+                          </div>
+                          <div>
+                            side: <span className="text-slate-200">{d.side}</span>
+                          </div>
+                          <div>
+                            textureLoaded:{' '}
+                            <span className={d.textureLoaded ? 'text-emerald-400' : 'text-amber-400'}>
+                              {String(d.textureLoaded)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-[9px] text-slate-400 pt-1 border-t border-slate-800/60">
+                          Texture status: {d.textureStatus}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* 2. Waving.fbx Analysis */}
