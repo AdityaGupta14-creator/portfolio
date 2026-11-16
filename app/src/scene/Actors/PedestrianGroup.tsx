@@ -84,6 +84,8 @@ interface PedestrianInstance {
   standAction?: THREE.AnimationAction;
   waveAction?: THREE.AnimationAction;
   shadowMesh: THREE.Mesh;
+  resolvedTrackCount: number; // diagnostic: how many tracks resolved on this skeleton
+  movingWithoutWalkTimer: number; // watchdog: seconds moved without active walk action
 }
 
 /**
@@ -287,10 +289,26 @@ const MixamoWalkingPedestrians: React.FC = () => {
           }
         });
 
-        // Prepare optional standing pose and waving action from wave clip
-        const standClip = wavingFbx && wavingFbx.animations[0] ? wavingFbx.animations[0].clone() : null;
-        if (standClip) standClip.name = 'Stand';
+        // Standing-pose clip: frame 0 of Waving.fbx (upright standing with feet together)
+        // or frame 0 of Walking.fbx as fallback.
+        const standClip = (() => {
+          const srcClip = (wavingFbx && wavingFbx.animations[0]) || rawWalkClip;
+          if (!srcClip || srcClip.tracks.length === 0) return null;
+          const frozenTracks = srcClip.tracks.map((t) => {
+            const TrackCtor = t.constructor as new (
+              name: string,
+              times: number[],
+              values: number[]
+            ) => THREE.KeyframeTrack;
+            const valSize = t.getValueSize();
+            const vals = Array.from(t.values.slice(0, valSize));
+            return new TrackCtor(t.name, [0, 1.0], [...vals, ...vals]);
+          });
+          const clip = new THREE.AnimationClip('Stand', 1.0, frozenTracks);
+          return clip;
+        })();
 
+        // Wave clip from Waving.fbx
         const waveClip = wavingFbx && wavingFbx.animations[0] ? wavingFbx.animations[0].clone() : null;
         if (waveClip) waveClip.name = 'Wave';
 
@@ -321,8 +339,7 @@ const MixamoWalkingPedestrians: React.FC = () => {
           let standAction: THREE.AnimationAction | undefined = undefined;
           if (standClip) {
             standAction = mixer.clipAction(standClip);
-            standAction.setLoop(THREE.LoopOnce, 1);
-            standAction.clampWhenFinished = true;
+            standAction.setLoop(THREE.LoopRepeat, Infinity);
           }
 
           let waveAction: THREE.AnimationAction | undefined = undefined;
@@ -346,6 +363,21 @@ const MixamoWalkingPedestrians: React.FC = () => {
           shadowMesh.rotation.x = -Math.PI / 2;
           shadowMesh.position.y = 0.012;
 
+          // Count resolved tracks (diagnostic: should be equal for all pedestrians)
+          const binding = mixer.clipAction(walkClip);
+          const resolvedTrackCount = walkClip.tracks.filter((track) => {
+            const rootName = track.name.split('.')[0];
+            let found = false;
+            clonedAvatar.traverse((obj) => { if (obj.name === rootName) found = true; });
+            return found;
+          }).length;
+          if (console && console.info) {
+            console.info(
+              `[PED #${config.id}] walk clip tracks: ${walkClip.tracks.length} total, ${resolvedTrackCount} resolved`,
+              binding ? '(action bound)' : '(action NULL)'
+            );
+          }
+
           const root = new THREE.Group();
           root.position.set(config.initialX, lane.pavementY, lane.zCenter);
           root.rotation.y = lane.direction > 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -360,6 +392,8 @@ const MixamoWalkingPedestrians: React.FC = () => {
             standAction,
             waveAction,
             shadowMesh,
+            resolvedTrackCount,
+            movingWithoutWalkTimer: 0,
           };
         });
 
@@ -418,8 +452,11 @@ const MixamoWalkingPedestrians: React.FC = () => {
       if (rt.state === 'greet') {
         rt.greetTimer -= clampedDelta;
 
-        // Slow smooth advance along sidewalk
-        rt.x += rt.currentSpeed * rt.dir * clampedDelta;
+        // Slow smooth advance along sidewalk (only while walk action is running)
+        const canTranslate = instances[i]?.walkAction.isRunning() && instances[i]?.walkAction.getEffectiveWeight() > 0.05;
+        if (canTranslate || !rt.isWaving) {
+          rt.x += rt.currentSpeed * rt.dir * clampedDelta;
+        }
 
         // Lateral offset transition (e.g. moving aside slightly for follower behind)
         const offsetDiff = rt.targetLateralOffset - rt.lateralOffset;
@@ -451,9 +488,12 @@ const MixamoWalkingPedestrians: React.FC = () => {
         const dist = Math.hypot(dx, dz);
 
         if (dist > 0.15) {
-          const moveStep = Math.min(dist, cfg.cruiseSpeed * 0.9 * clampedDelta);
-          rt.x += (dx / dist) * moveStep;
-          rt.z += (dz / dist) * moveStep;
+          const canTranslate = instances[i]?.walkAction.isRunning() && instances[i]?.walkAction.getEffectiveWeight() > 0.05;
+          if (canTranslate) {
+            const moveStep = Math.min(dist, cfg.cruiseSpeed * 0.9 * clampedDelta);
+            rt.x += (dx / dist) * moveStep;
+            rt.z += (dz / dist) * moveStep;
+          }
           rt.targetSpeed = cfg.cruiseSpeed * 0.85;
 
           // Face the target waiting point
@@ -464,6 +504,7 @@ const MixamoWalkingPedestrians: React.FC = () => {
           rt.z = waitingPoint.z;
           rt.state = 'wait';
           rt.targetSpeed = 0;
+          rt.currentSpeed = 0;
           rt.targetYaw = waitingPoint.facingYaw; // Face the road directly!
           rt.waitTimer = 0;
         }
@@ -476,6 +517,7 @@ const MixamoWalkingPedestrians: React.FC = () => {
           rt.crossingDirZ > 0 ? cw.northWaitingPoint : cw.southWaitingPoint;
 
         rt.targetSpeed = 0;
+        rt.currentSpeed = 0;
         rt.targetYaw = waitingPoint.facingYaw; // Ensure facing the road
 
         // Evaluate oncoming car safe gap
@@ -512,8 +554,11 @@ const MixamoWalkingPedestrians: React.FC = () => {
         rt.targetSpeed = crossSpeed;
         rt.targetYaw = rt.crossingDirZ > 0 ? Math.PI : 0; // Straight line across road
 
-        // Advance straight along Z
-        rt.z += crossSpeed * rt.crossingDirZ * clampedDelta;
+        // Advance straight along Z only when walk action is running
+        const canTranslate = instances[i]?.walkAction.isRunning() && instances[i]?.walkAction.getEffectiveWeight() > 0.05;
+        if (canTranslate) {
+          rt.z += crossSpeed * rt.crossingDirZ * clampedDelta;
+        }
 
         // Smoothly adjust elevation from sidewalk (0.16/0.10) to road asphalt (-0.08)
         if (rt.z > -5.8 && rt.z < 4.8) {
@@ -581,6 +626,7 @@ const MixamoWalkingPedestrians: React.FC = () => {
       else if (rt.state === 'pausing') {
         rt.pauseTimer -= clampedDelta;
         rt.targetSpeed = 0;
+        rt.currentSpeed = 0;
         if (rt.pauseTimer <= 0) {
           rt.state = 'walking';
           rt.targetSpeed = cfg.cruiseSpeed;
@@ -813,8 +859,11 @@ const MixamoWalkingPedestrians: React.FC = () => {
         const maxDeltaOffset = AVOIDANCE_CONFIG.lateralSteerRate * clampedDelta;
         rt.lateralOffset += Math.sign(offsetDiff) * Math.min(Math.abs(offsetDiff), maxDeltaOffset);
 
-        // Advance along sidewalk X
-        rt.x += rt.currentSpeed * rt.dir * clampedDelta;
+        // Advance along sidewalk X only while walk action is running
+        const canTranslate = instances[i]?.walkAction.isRunning() && instances[i]?.walkAction.getEffectiveWeight() > 0.05;
+        if (canTranslate) {
+          rt.x += rt.currentSpeed * rt.dir * clampedDelta;
+        }
         rt.z = THREE.MathUtils.clamp(rt.baseZ + rt.lateralOffset, lane.minZ, lane.maxZ);
         rt.y = lane.pavementY;
 
@@ -841,6 +890,9 @@ const MixamoWalkingPedestrians: React.FC = () => {
     }
 
     // ── Phase 2: Matrix Updates & Animation Synchronization ──────────────────
+    // RULE: mixer.update() runs every frame for EVERY pedestrian. Movement is
+    // driven by animation state: only translate while walk action is running.
+    // When WAIT/IDLE, translate nothing and crossfade (0.3s) to standing pose.
     for (let i = 0; i < instances.length; i++) {
       const inst = instances[i];
       const rt = runtimes[i];
@@ -849,48 +901,142 @@ const MixamoWalkingPedestrians: React.FC = () => {
       const distToCamera = camera.position.distanceTo(inst.root.position);
       const isNearCamera = distToCamera < 85;
 
-      if (isNearCamera) {
-        if (rt.state === 'greet') {
-          if (rt.isWaving && inst.waveAction) {
-            if (!inst.waveAction.isRunning()) {
-              inst.walkAction.crossFadeTo(inst.waveAction, 0.3, true);
-              inst.waveAction.reset().play();
-            }
-          } else {
-            const effectiveTimeScale = calculateWalkTimeScale(rt.currentSpeed, cfg.heightMult);
-            inst.walkAction.setEffectiveTimeScale(effectiveTimeScale);
+      // ── Animation state transitions ────────────────────────────────────────
+      if (rt.state === 'greet') {
+        if (rt.isWaving && inst.waveAction) {
+          if (!inst.waveAction.isRunning()) {
+            inst.walkAction.crossFadeTo(inst.waveAction, 0.3, true);
+            inst.waveAction.reset().play();
           }
         } else {
-          // If waveAction is still running, crossfade back into walkAction in 0.3s
+          // Not waving partner: slow walk
           if (inst.waveAction && inst.waveAction.isRunning()) {
             inst.waveAction.crossFadeTo(inst.walkAction, 0.3, true);
             inst.walkAction.play();
           }
-
-          const effectiveTimeScale = calculateWalkTimeScale(rt.currentSpeed, cfg.heightMult);
-          inst.walkAction.setEffectiveTimeScale(effectiveTimeScale);
-
-          if (rt.currentSpeed <= 0.04) {
-            if (inst.standAction && inst.walkAction.isRunning()) {
-              inst.walkAction.crossFadeTo(inst.standAction, 0.25, true);
-              inst.standAction.reset().play();
-            }
-          } else {
-            if (inst.standAction && inst.standAction.isRunning()) {
-              inst.standAction.crossFadeTo(inst.walkAction, 0.25, true);
-              inst.walkAction.play();
-            }
-          }
+          const ts = calculateWalkTimeScale(rt.currentSpeed, cfg.heightMult);
+          inst.walkAction.setEffectiveTimeScale(Math.max(ts, 0.001));
+        }
+      } else if (rt.state === 'wait' || rt.state === 'pausing') {
+        // Kerb wait or paused: translate nothing and crossfade (0.3s) to standing pose
+        rt.targetSpeed = 0;
+        rt.currentSpeed = 0;
+        if (inst.waveAction && inst.waveAction.isRunning()) {
+          inst.waveAction.stop();
+        }
+        if (inst.standAction && (!inst.standAction.isRunning() || inst.standAction.getEffectiveWeight() < 0.5)) {
+          inst.walkAction.crossFadeTo(inst.standAction, 0.3, true);
+          inst.standAction.reset().play();
+        }
+      } else {
+        // Moving states: walking, cross, avoid, following, turning
+        if (inst.waveAction && inst.waveAction.isRunning()) {
+          inst.waveAction.crossFadeTo(inst.walkAction, 0.3, true);
+          inst.walkAction.play();
         }
 
-        inst.mixer.update(clampedDelta);
-        inst.shadowMesh.visible = true;
-      } else {
-        inst.shadowMesh.visible = false;
+        if (rt.currentSpeed <= 0.04 && rt.targetSpeed <= 0.04) {
+          // Stopped: crossfade (0.3s) to standing pose
+          if (inst.standAction && (!inst.standAction.isRunning() || inst.standAction.getEffectiveWeight() < 0.5)) {
+            inst.walkAction.crossFadeTo(inst.standAction, 0.3, true);
+            inst.standAction.reset().play();
+          }
+        } else {
+          // Moving: ensure walk action is running, crossfade from stand in 0.3s
+          if (inst.standAction && inst.standAction.isRunning() && inst.standAction.getEffectiveWeight() > 0.1) {
+            inst.standAction.crossFadeTo(inst.walkAction, 0.3, true);
+            inst.walkAction.play();
+          } else if (!inst.walkAction.isRunning() || inst.walkAction.getEffectiveWeight() < 0.1) {
+            inst.walkAction.reset().play();
+          }
+          const ts = calculateWalkTimeScale(rt.currentSpeed, cfg.heightMult);
+          inst.walkAction.setEffectiveTimeScale(Math.max(ts, 0.001));
+        }
       }
 
+      // ── WATCHDOG: sliding detection ─────────────────────────────────────────
+      // If a person moves for more than 0.5 s without a running walk action,
+      // log a warning with the id and force a crossfade to walk.
+      const walkWeight = inst.walkAction.getEffectiveWeight();
+      const isMoving = rt.currentSpeed > 0.1;
+      const walkIsActive = inst.walkAction.isRunning() && walkWeight > 0.5;
+
+      if (isMoving && !walkIsActive) {
+        inst.movingWithoutWalkTimer += clampedDelta;
+        if (inst.movingWithoutWalkTimer > 0.5) {
+          console.warn(
+            `[PED #${cfg.id}] Watchdog: moving ${rt.currentSpeed.toFixed(2)} m/s for >0.5s without running walk action (weight=${walkWeight.toFixed(2)}). Forcing crossfade to walk.`
+          );
+          if (inst.standAction && inst.standAction.isRunning()) {
+            inst.standAction.crossFadeTo(inst.walkAction, 0.3, true);
+          } else {
+            inst.mixer.stopAllAction();
+            inst.walkAction.reset();
+            inst.walkAction.setEffectiveWeight(1.0);
+            inst.walkAction.play();
+          }
+          const ts = calculateWalkTimeScale(rt.currentSpeed, cfg.heightMult);
+          inst.walkAction.setEffectiveTimeScale(Math.max(ts, 0.001));
+          inst.movingWithoutWalkTimer = 0;
+        }
+      } else {
+        inst.movingWithoutWalkTimer = 0;
+      }
+
+      // ── Single update loop: mixer updated every frame for every pedestrian ──
+      inst.mixer.update(clampedDelta);
+
+      // ── Position & rotation ────────────────────────────────────────────────
       inst.root.position.set(rt.x, rt.y, rt.z);
       inst.root.rotation.y = rt.yaw;
+
+      // ── Shadow LOD (only near camera) ────────────────────────────────────
+      inst.shadowMesh.visible = isNearCamera;
+    }
+
+    // Expose live overlay telemetry on window for browser-based inspection
+    if (typeof window !== 'undefined') {
+      (window as any).__pedOverlayData = [
+        ...instances.map((ins, i) => {
+          const r = runtimes[i];
+          const wa = ins.walkAction;
+          const walkRunning = wa.isRunning();
+          const walkWeight = wa.getEffectiveWeight();
+          const walkTimeScale = wa.getEffectiveTimeScale();
+          const walkTime = wa.time;
+          let activeAction = 'Walk';
+          if (ins.standAction?.isRunning() && ins.standAction.getEffectiveWeight() > 0.5) activeAction = 'Stand';
+          else if (ins.waveAction?.isRunning() && ins.waveAction.getEffectiveWeight() > 0.5) activeAction = 'Wave';
+
+          const isSliding = r.currentSpeed > 0.1 && (!walkRunning || walkWeight < 0.5);
+          return {
+            id: `PED #${r.id}`,
+            modelType: 'Mixamo clone',
+            state: r.state.toUpperCase(),
+            speed: `${r.currentSpeed.toFixed(2)} m/s`,
+            action: activeAction,
+            isRunning: walkRunning,
+            weight: walkWeight.toFixed(2),
+            timeScale: walkTimeScale.toFixed(2),
+            time: `${walkTime.toFixed(2)}s`,
+            status: isSliding ? 'RED' : 'GREEN',
+            resolvedTracks: ins.resolvedTrackCount,
+          };
+        }),
+        ...STATIC_EXTRAS.map((extra) => ({
+          id: `Extra-${extra.modelKey}`,
+          modelType: 'Rigify extra',
+          state: 'IDLE',
+          speed: '0.00 m/s',
+          action: 'Breathing',
+          isRunning: true,
+          weight: '1.00',
+          timeScale: '1.00',
+          time: '0.00s',
+          status: 'GREEN',
+          resolvedTracks: 1,
+        }))
+      ];
     }
 
     // Trigger debug overlay re-render
@@ -911,7 +1057,7 @@ const MixamoWalkingPedestrians: React.FC = () => {
 
       {/* ── Debug Overlay (Press P): Crosswalks, Gap Checks, States ────────── */}
       {isPedestrianDebug && (
-        <PedestrianDebugOverlay runtimes={runtimesRef.current} />
+        <PedestrianDebugOverlay runtimes={runtimesRef.current} instances={instances} />
       )}
     </group>
   );
@@ -923,12 +1069,13 @@ const MixamoWalkingPedestrians: React.FC = () => {
 // ═════════════════════════════════════════════════════════════════════════════
 interface DebugOverlayProps {
   runtimes: WalkerRuntime[];
+  instances: PedestrianInstance[];
 }
 
-function createDebugLabelTexture(rt: WalkerRuntime): THREE.CanvasTexture {
+function createDebugLabelTexture(rt: WalkerRuntime, inst: PedestrianInstance | undefined): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 220;
+  canvas.width = 560;
+  canvas.height = 310;
   const ctx = canvas.getContext('2d');
   if (!ctx) return new THREE.CanvasTexture(canvas);
 
@@ -937,70 +1084,110 @@ function createDebugLabelTexture(rt: WalkerRuntime): THREE.CanvasTexture {
   const isCross = rt.state === 'cross';
   const isGreet = rt.state === 'greet';
 
-  // Card background styling
-  if (isGreet) {
-    ctx.fillStyle = 'rgba(147, 51, 234, 0.95)'; // Vibrant Purple for GREET
-  } else if (isWait) {
-    ctx.fillStyle = rt.gapCheckInfo?.safe
-      ? 'rgba(16, 185, 129, 0.92)' // Green when safe
-      : 'rgba(217, 119, 6, 0.92)';  // Amber when waiting for car
-  } else if (isCross) {
-    ctx.fillStyle = 'rgba(67, 56, 202, 0.92)'; // Indigo when crossing road
-  } else if (isThreat) {
-    ctx.fillStyle = 'rgba(185, 28, 28, 0.92)'; // Red on obstacle
-  } else {
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.90)';  // Slate default
+  // Mixer diagnostics
+  let walkRunning = false;
+  let walkWeight = 0;
+  let walkTimeScale = 0;
+  let walkTime = 0;
+  let activeActionName = 'none';
+
+  if (inst) {
+    const wa = inst.walkAction;
+    walkRunning = wa.isRunning();
+    walkWeight = wa.getEffectiveWeight();
+    walkTimeScale = wa.getEffectiveTimeScale();
+    walkTime = wa.time;
+    if (walkRunning && walkWeight > 0.5) activeActionName = 'Walk';
+    else if (inst.standAction?.isRunning() && inst.standAction.getEffectiveWeight() > 0.3) activeActionName = 'Stand';
+    else if (inst.waveAction?.isRunning() && inst.waveAction.getEffectiveWeight() > 0.3) activeActionName = 'Wave';
   }
 
-  ctx.strokeStyle = isGreet ? '#e9d5ff' : (isWait ? '#fef08a' : (isCross ? '#a5b4fc' : '#38bdf8'));
-  ctx.lineWidth = 4;
+  // 🔴 SLIDING: moving with speed > 0.1 but walk not properly active
+  const isSliding = rt.currentSpeed > 0.1 && (!walkRunning || walkWeight < 0.5);
+  const isOkayStanding = rt.currentSpeed <= 0.1; // standing still is fine
+
+  // Card background styling — RED overrides everything when sliding
+  if (isSliding) {
+    ctx.fillStyle = 'rgba(220, 20, 20, 0.97)'; // Bright RED = sliding bug
+  } else if (isGreet) {
+    ctx.fillStyle = 'rgba(147, 51, 234, 0.95)'; // Purple = GREET
+  } else if (isWait) {
+    ctx.fillStyle = rt.gapCheckInfo?.safe
+      ? 'rgba(16, 185, 129, 0.92)'  // Green = safe gap
+      : 'rgba(217, 119, 6, 0.92)';  // Amber = waiting for car
+  } else if (isCross) {
+    ctx.fillStyle = 'rgba(67, 56, 202, 0.92)'; // Indigo = crossing
+  } else if (isThreat) {
+    ctx.fillStyle = 'rgba(185, 28, 28, 0.92)'; // Dark red = obstacle
+  } else if (isOkayStanding) {
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';  // Slate = normal standing
+  } else {
+    ctx.fillStyle = 'rgba(10, 50, 20, 0.92)';  // Dark green = walking normally
+  }
+
+  const borderColor = isSliding ? '#ff6b6b' : (isGreet ? '#e9d5ff' : (isWait ? '#fef08a' : (isCross ? '#a5b4fc' : '#38bdf8')));
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = isSliding ? 6 : 4;
   ctx.beginPath();
   ctx.roundRect(8, 8, canvas.width - 16, canvas.height - 16, 20);
   ctx.fill();
   ctx.stroke();
 
-  // Header Title
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 30px monospace';
+  // Header: id + state
+  ctx.fillStyle = isSliding ? '#ffe0e0' : '#ffffff';
+  ctx.font = 'bold 28px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(`PED #${rt.id} • [${rt.state.toUpperCase()}]`, canvas.width / 2, 48);
+  const modelType = 'Mixamo';
+  ctx.fillText(`PED #${rt.id} (${modelType}) • [${rt.state.toUpperCase()}]${isSliding ? ' ⚠ SLIDE' : ''}`, canvas.width / 2, 44);
 
-  // Body metrics
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = '24px monospace';
+  // Row 2: Speed
+  ctx.fillStyle = isSliding ? '#ffcccc' : '#f8fafc';
+  ctx.font = '22px monospace';
+  ctx.fillText(`spd: ${rt.currentSpeed.toFixed(3)} m/s  tgt: ${rt.targetSpeed.toFixed(3)} m/s`, canvas.width / 2, 80);
 
+  // Row 3: Mixer — action name, isRunning, weight, timeScale, time
+  const mixerColor = isSliding ? '#ff9999' : (walkRunning && walkWeight > 0.5 ? '#86efac' : '#fca5a5');
+  ctx.fillStyle = mixerColor;
+  ctx.font = '20px monospace';
+  ctx.fillText(`action: ${activeActionName}  run:${walkRunning ? 'Y' : 'N'}  w:${walkWeight.toFixed(2)}  ts:${walkTimeScale.toFixed(2)}`, canvas.width / 2, 116);
+  ctx.fillText(`walk.time: ${walkTime.toFixed(3)}s`, canvas.width / 2, 148);
+
+  // Row 4: behavior details
+  ctx.fillStyle = '#cbd5e1';
+  ctx.font = '20px monospace';
   if (isGreet) {
-    ctx.fillText(`Greeting PED #${rt.greetPartnerId} (${rt.isWaving ? 'Waving' : 'Nodding'})`, canvas.width / 2, 92);
-    ctx.fillStyle = '#f3e8ff';
-    ctx.fillText(`Timer: ${rt.greetTimer.toFixed(1)}s | Head Turn: ~30°`, canvas.width / 2, 136);
+    ctx.fillText(`Greeting #${rt.greetPartnerId} (${rt.isWaving ? 'Wave' : 'Nod'}) t:${rt.greetTimer.toFixed(1)}s`, canvas.width / 2, 184);
   } else if (isWait) {
     const gap = rt.gapCheckInfo;
-    ctx.fillText(`Kerb Wait: ${gap?.safe ? 'GAP SAFE' : 'CAR PASSING'}`, canvas.width / 2, 92);
-    if (gap && !gap.safe) {
-      ctx.fillStyle = '#fee2e2';
-      ctx.fillText(`Car #${gap.threatCarId} at ${gap.threatCarDist.toFixed(1)}m < safe ${gap.safeDist.toFixed(1)}m`, canvas.width / 2, 136);
-    } else {
-      ctx.fillStyle = '#dcfce7';
-      ctx.fillText(`Ready to cross road -> 1.6 m/s`, canvas.width / 2, 136);
-    }
+    ctx.fillText(`Kerb: ${gap?.safe ? 'GAP SAFE ✓' : `Car#${gap?.threatCarId}@${gap?.threatCarDist.toFixed(1)}m`}`, canvas.width / 2, 184);
   } else if (isCross) {
-    ctx.fillText(`Crossing Road: 1.60 m/s`, canvas.width / 2, 92);
-    ctx.fillText(`Target: ${rt.crossingDirZ > 0 ? 'South Promenade' : 'North Sidewalk'}`, canvas.width / 2, 136);
+    ctx.fillText(`Crossing → ${rt.crossingDirZ > 0 ? 'South' : 'North'} at 1.6m/s`, canvas.width / 2, 184);
   } else {
-    ctx.fillText(`v: ${rt.currentSpeed.toFixed(2)} m/s (tgt: ${rt.targetSpeed.toFixed(2)})`, canvas.width / 2, 92);
-    ctx.fillText(`Offset: ${rt.lateralOffset.toFixed(2)}m (tgt: ${rt.targetLateralOffset.toFixed(2)})`, canvas.width / 2, 136);
+    ctx.fillText(`off: ${rt.lateralOffset.toFixed(2)}m  tgt: ${rt.targetLateralOffset.toFixed(2)}m`, canvas.width / 2, 184);
   }
 
-  ctx.fillStyle = '#94a3b8';
-  ctx.font = '22px monospace';
-  ctx.fillText(`${rt.lane.name}`, canvas.width / 2, 182);
+  // Row 5: lane name + resolved tracks
+  ctx.fillStyle = '#64748b';
+  ctx.font = '18px monospace';
+  const tracks = inst?.resolvedTrackCount ?? '?';
+  ctx.fillText(`${rt.lane.name}  |  tracks:${tracks}`, canvas.width / 2, 220);
+
+  // Status bar
+  ctx.fillStyle = isSliding ? '#ff4444' : (walkRunning && walkWeight > 0.5 ? '#22c55e' : '#f59e0b');
+  ctx.font = 'bold 20px monospace';
+  ctx.fillText(
+    isSliding ? '🔴 SLIDING — walk action not active' :
+    (!walkRunning || walkWeight < 0.3) ? '🟡 STANDING — walk paused' :
+    '🟢 OK — walk active',
+    canvas.width / 2, 258
+  );
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
   return tex;
 }
 
-const PedestrianDebugOverlay: React.FC<DebugOverlayProps> = ({ runtimes }) => {
+const PedestrianDebugOverlay: React.FC<DebugOverlayProps> = ({ runtimes, instances }) => {
   // Lane guidelines
   const laneLines = useMemo(() => {
     const mat = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 });
@@ -1072,6 +1259,7 @@ const PedestrianDebugOverlay: React.FC<DebugOverlayProps> = ({ runtimes }) => {
 
       {/* 3. Per-Pedestrian Dynamic Annotations & Gap Checks */}
       {runtimes.map((rt) => {
+        const inst = instances.find((it) => it.config.id === rt.id);
         const isTriggered = rt.threatId !== null || rt.state === 'wait';
         const lookAheadLength = AVOIDANCE_CONFIG.lookAheadDistance;
         const startPt = new THREE.Vector3(rt.x, rt.y + 0.12, rt.z);
@@ -1087,7 +1275,7 @@ const PedestrianDebugOverlay: React.FC<DebugOverlayProps> = ({ runtimes }) => {
         });
         const lineGeom = new THREE.BufferGeometry().setFromPoints([startPt, endPt]);
         const lookAheadLine = new THREE.Line(lineGeom, lineMat);
-        const labelTexture = createDebugLabelTexture(rt);
+        const labelTexture = createDebugLabelTexture(rt, inst);
 
         // Gap check line to threatening car (if waiting at kerb)
         let gapLine: THREE.Line | null = null;
@@ -1139,8 +1327,8 @@ const PedestrianDebugOverlay: React.FC<DebugOverlayProps> = ({ runtimes }) => {
 
             {/* Floating State & Telemetry Sprite Billboard */}
             <sprite
-              position={[rt.x, rt.y + 2.3 + (rt.id % 2 === 0 ? 0.45 : 0), rt.z]}
-              scale={[2.5, 1.05, 1.0]}
+              position={[rt.x, rt.y + 2.4 + (rt.id % 2 === 0 ? 0.35 : 0), rt.z]}
+              scale={[2.8, 1.55, 1.0]}
             >
               <spriteMaterial
                 map={labelTexture}
@@ -1201,10 +1389,67 @@ const STATIC_EXTRAS: StaticExtraDef[] = [
   },
 ];
 
+function createRigifyDebugLabelTexture(extra: StaticExtraDef, elapsed: number): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 560;
+  canvas.height = 310;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  // Background: dark slate with emerald border (always green, static extras never move)
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+  ctx.strokeStyle = '#10b981';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.roundRect(8, 8, canvas.width - 16, canvas.height - 16, 20);
+  ctx.fill();
+  ctx.stroke();
+
+  // Header: id + model type + state
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 28px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(`EXTRA #${extra.modelKey} (Rigify extra) • [IDLE]`, canvas.width / 2, 44);
+
+  // Row 2: Speed (always 0.000 for static extras)
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = '22px monospace';
+  ctx.fillText(`spd: 0.000 m/s  tgt: 0.000 m/s`, canvas.width / 2, 80);
+
+  // Row 3: Mixer diagnostics
+  ctx.fillStyle = '#86efac';
+  ctx.font = '20px monospace';
+  ctx.fillText(`action: Breathing  run:Y  w:1.00  ts:1.00`, canvas.width / 2, 116);
+  ctx.fillText(`idle.time: ${(elapsed + extra.phaseOffset).toFixed(3)}s`, canvas.width / 2, 148);
+
+  // Row 4: Static location
+  ctx.fillStyle = '#cbd5e1';
+  ctx.font = '20px monospace';
+  ctx.fillText(`pos: [${extra.position.map((v) => v.toFixed(1)).join(', ')}]  static`, canvas.width / 2, 184);
+
+  // Row 5: Resolved tracks
+  ctx.fillStyle = '#64748b';
+  ctx.font = '18px monospace';
+  ctx.fillText(`tracks: 1 resolved (spine.rot)  |  Never moves`, canvas.width / 2, 220);
+
+  // Status bar
+  ctx.fillStyle = '#22c55e';
+  ctx.font = 'bold 20px monospace';
+  ctx.fillText('🟢 OK — breathing idle (static)', canvas.width / 2, 258);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
 const StaticStorefrontExtras: React.FC = () => {
   const gltf = useGLTF('/models/characters.opt.glb', true, true, (loader) => {
     loader.setMeshoptDecoder(MeshoptDecoder);
   });
+  const isPedestrianDebug = useAppStore((s) => s.isPedestrianDebug);
+  const elapsedRef = useRef<number>(0);
+  const [, setDebugTrigger] = useState<number>(0);
+  const debugTickRef = useRef<number>(0);
 
   const spineRefs = useRef<(THREE.Bone | null)[]>([]);
 
@@ -1267,14 +1512,23 @@ const StaticStorefrontExtras: React.FC = () => {
     });
   }, [gltf]);
 
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, delta) => {
     const elapsed = clock.getElapsedTime();
+    elapsedRef.current = elapsed;
     for (let i = 0; i < spineRefs.current.length; i++) {
       const spine = spineRefs.current[i];
       if (spine) {
         const offset = STATIC_EXTRAS[i].phaseOffset;
         spine.rotation.x = Math.sin(elapsed * 1.5 + offset) * 0.02;
         spine.rotation.y = Math.sin(elapsed * 0.7 + offset) * 0.015;
+      }
+    }
+
+    if (isPedestrianDebug) {
+      debugTickRef.current += delta;
+      if (debugTickRef.current > 0.08) {
+        debugTickRef.current = 0;
+        setDebugTrigger((prev) => prev + 1);
       }
     }
   });
@@ -1284,6 +1538,22 @@ const StaticStorefrontExtras: React.FC = () => {
       {extraRoots.map((root, idx) => (
         <primitive key={idx} object={root} />
       ))}
+
+      {/* Static Extras Debug Billboard Labels (Press P) */}
+      {isPedestrianDebug && (
+        <group>
+          {STATIC_EXTRAS.map((extra, idx) => {
+            const labelTex = createRigifyDebugLabelTexture(extra, elapsedRef.current);
+            return (
+              <group key={`extra-dbg-${idx}`} position={extra.position}>
+                <sprite position={[0, extra.height + 0.6, 0]} scale={[2.8, 1.55, 1.0]}>
+                  <spriteMaterial map={labelTex} transparent depthTest={false} />
+                </sprite>
+              </group>
+            );
+          })}
+        </group>
+      )}
     </group>
   );
 };
