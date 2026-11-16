@@ -31,20 +31,20 @@ function computeKeyframes(): Keyframe[] {
   const frames: Keyframe[] = [
     {
       p: 0.0,
-      pos: new THREE.Vector3(0.0, 72.0, 60.0),
-      look: new THREE.Vector3(0.0, 62.0, -20.0),
+      pos: new THREE.Vector3(0.0, 78.0, 68.0),
+      look: new THREE.Vector3(0.0, 74.0, -30.0),
       name: 'Sky Hero & Clouds Start',
     },
     {
       p: 0.10,
-      pos: new THREE.Vector3(-18.0, 32.0, 6.0),
-      look: new THREE.Vector3(-28.0, 16.0, -10.0),
+      pos: new THREE.Vector3(-16.0, 36.0, 18.0),
+      look: new THREE.Vector3(-26.0, 22.0, -12.0),
       name: 'Cloud Descent',
     },
     {
       p: 0.20,
-      pos: new THREE.Vector3(-34.0, 6.5, 0.5),
-      look: new THREE.Vector3(p101.xPos, 2.2, RAW_BOUNDS.northRowZ),
+      pos: new THREE.Vector3(-34.0, 5.5, 1.0),
+      look: new THREE.Vector3(p101.xPos, 2.0, RAW_BOUNDS.northRowZ),
       name: 'Avenue Approach 101',
     },
   ];
@@ -173,7 +173,7 @@ export const CameraController: React.FC = () => {
     return p.has('greet') || p.get('view') === 'greet';
   }, []);
 
-  useFrame(() => {
+  useFrame((_, delta) => {
     if (isTopDownDebug) {
       // Dev-only top-down debug view (Press B)
       camera.position.set(0, 115, RAW_BOUNDS.streetCenterZ);
@@ -223,8 +223,10 @@ export const CameraController: React.FC = () => {
       currentLookAt.current.copy(targetLookAt.current);
       isFirstCamFrame.current = false;
     } else {
-      currentCamPos.current.lerp(desiredPos, 0.06);
-      currentLookAt.current.lerp(targetLookAt.current, 0.06);
+      const dt = Math.min(delta, 0.1);
+      const alpha = 1.0 - Math.exp(-8.0 * dt);
+      currentCamPos.current.lerp(desiredPos, alpha);
+      currentLookAt.current.lerp(targetLookAt.current, alpha);
     }
 
     // Debug Camera Override (allows automated tooling or debugging scripts to frame targets)
@@ -237,6 +239,26 @@ export const CameraController: React.FC = () => {
 
     camera.position.copy(currentCamPos.current);
     camera.lookAt(currentLookAt.current);
+
+    if (typeof window !== 'undefined') {
+      (window as any).__DEBUG_CAMERA__ = camera;
+    }
+
+    // Dynamic FOV: widens slightly (from 45 to 50 deg) during rapid cloud descent, easing back to 45 at street level
+    if ((camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
+      const pCam = camera as THREE.PerspectiveCamera;
+      let targetFov = 45;
+      if (focusedBuildingIndex === null && scrollProgress < 0.22) {
+        // Peaks midway through descent (p ~ 0.10)
+        const descentProgress = THREE.MathUtils.clamp(scrollProgress / 0.20, 0.0, 1.0);
+        const fovBump = Math.sin(descentProgress * Math.PI) * 5.0;
+        targetFov = 45 + fovBump;
+      }
+      if (Math.abs(pCam.fov - targetFov) > 0.05) {
+        pCam.fov += (targetFov - pCam.fov) * 0.1;
+        pCam.updateProjectionMatrix();
+      }
+    }
 
     // ── 5. Proximity Collision Scanner (Dev-only warning if camera within 3m of any mesh) ─
     scanCounter.current++;

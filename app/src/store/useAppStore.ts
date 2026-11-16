@@ -97,7 +97,8 @@ const getInitialViewMode = (): ViewMode => {
 
 const getInitialDpr = (): number => {
   if (typeof window === 'undefined') return 1;
-  return Math.min(window.devicePixelRatio || 1, 2);
+  // Cap device pixel ratio at 1.75 for maximum performance while maintaining crisp rendering
+  return Math.min(window.devicePixelRatio || 1, 1.75);
 };
 
 const getInitialScrollProgress = (): number => {
@@ -337,3 +338,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   clearToast: () => set({ toastMessage: null }),
 }));
+
+if (typeof window !== 'undefined') {
+  (window as any).useAppStore = useAppStore;
+}
