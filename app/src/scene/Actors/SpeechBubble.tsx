@@ -6,11 +6,7 @@ export const SpeechBubble: React.FC<{
   position?: [number, number, number];
   onWaveClick: () => void;
 }> = ({ position = [0, 2.95, 0], onWaveClick }) => {
-  const scrollProgress = useAppStore((s) => s.scrollProgress);
-  const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
-
-  // Visible when drawer is closed AND at Hub overview (> 0.88)
-  const isVisible = focusedBuildingIndex === null && scrollProgress > 0.88;
+  const isVisible = useAppStore((s) => s.focusedBuildingIndex === null && s.scrollProgress > 0.88);
 
   if (!isVisible) return null;
 

@@ -5,6 +5,7 @@ import { useAppStore } from '../store/useAppStore';
 import { PORTFOLIO_CONTENT } from '../data/content';
 import { BUILDING_PROXIES, RAW_BOUNDS } from '../data/buildings';
 import { perfRenderTracker } from '../utils/perfTracker';
+import { scrollState } from '../utils/scrollState';
 
 interface Keyframe {
   p: number;
@@ -106,6 +107,7 @@ export const CameraController: React.FC = () => {
   const currentLookAt = useRef(new THREE.Vector3(0.0, 62.0, -20.0));
   const targetCamPos = useRef(new THREE.Vector3(0.0, 72.0, 60.0));
   const targetLookAt = useRef(new THREE.Vector3(0.0, 62.0, -20.0));
+  const desiredPosRef = useRef(new THREE.Vector3(0.0, 72.0, 60.0));
 
   const mouseParallaxX = useRef(0);
   const mouseParallaxY = useRef(0);
@@ -189,6 +191,9 @@ export const CameraController: React.FC = () => {
   }, []);
 
   useFrame((_, delta) => {
+    const clampedDelta = Math.min(delta, 0.05); // max 1/20s
+    const smoothedP = scrollState.update(clampedDelta);
+
     if (isTopDownDebug) {
       // Dev-only top-down debug view (Press B)
       camera.position.set(0, 115, RAW_BOUNDS.streetCenterZ);
@@ -225,12 +230,12 @@ export const CameraController: React.FC = () => {
       targetCamPos.current.set(b.xPos - (isMobile ? 0.6 : 0.8), EYE_HEIGHT, -4.8);
       targetLookAt.current.set(b.xPos - (isMobile ? 0.8 : 1.2), EYE_HEIGHT + 0.15, -12.0);
     } else {
-      computeScrollCamera(scrollProgress);
+      computeScrollCamera(smoothedP);
 
       // Gentle follow camera between stops:
       // When host is in the street tour (0.24 <= scrollProgress <= 0.88),
       // keep the host in frame (about 6-8 m behind and slightly to the side)
-      if (scrollProgress >= 0.24 && scrollProgress <= 0.88) {
+      if (smoothedP >= 0.24 && smoothedP <= 0.88) {
         const hostDebug = typeof window !== 'undefined' ? (window as any).__HOST_DEBUG__ : null;
         if (hostDebug && hostDebug.currentPos && hostDebug.activeTarget) {
           const hX = hostDebug.currentPos[0];
@@ -252,21 +257,20 @@ export const CameraController: React.FC = () => {
       }
     }
 
-    const desiredPos = targetCamPos.current.clone();
-    desiredPos.x += mouseParallaxX.current;
-    desiredPos.y += -mouseParallaxY.current * 0.35;
+    desiredPosRef.current.copy(targetCamPos.current);
+    desiredPosRef.current.x += mouseParallaxX.current;
+    desiredPosRef.current.y += -mouseParallaxY.current * 0.35;
 
     // Direct snap on initial frame or deep link, smooth position and target interpolation thereafter
     if (isFirstCamFrame.current) {
-      currentCamPos.current.copy(desiredPos);
+      currentCamPos.current.copy(desiredPosRef.current);
       currentLookAt.current.copy(targetLookAt.current);
       isFirstCamFrame.current = false;
     } else {
-      const dt = Math.min(delta, 0.1);
       const isQuickEase = performance.now() < quickEaseEndTime.current;
       const lerpRate = isQuickEase ? 12.0 : skipAnimation ? 18.0 : 8.0;
-      const alpha = 1.0 - Math.exp(-lerpRate * dt);
-      currentCamPos.current.lerp(desiredPos, alpha);
+      const alpha = 1.0 - Math.exp(-lerpRate * clampedDelta);
+      currentCamPos.current.lerp(desiredPosRef.current, alpha);
       currentLookAt.current.lerp(targetLookAt.current, alpha);
     }
 

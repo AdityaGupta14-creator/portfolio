@@ -5,15 +5,14 @@ import { useAppStore } from '../store/useAppStore';
 import { PORTFOLIO_CONTENT } from '../data/content';
 
 export const TourBanner: React.FC = () => {
-  const scrollProgress = useAppStore((s) => s.scrollProgress);
-  const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
+  const isVisible = useAppStore(
+    (s) => s.focusedBuildingIndex === null && s.scrollProgress >= 0.22 && s.scrollProgress <= 0.90
+  );
   const tourStep = useAppStore((s) => s.tourStep);
   const focusBuilding = useAppStore((s) => s.focusBuilding);
   const skipAnimation = useAppStore((s) => s.skipAnimation);
   const toggleSkipAnimation = useAppStore((s) => s.toggleSkipAnimation);
 
-  // Strict mutual exclusivity: Only show between 0.22 and 0.90 when drawer is closed
-  const isVisible = focusedBuildingIndex === null && scrollProgress >= 0.22 && scrollProgress <= 0.90;
   const currentBuilding = PORTFOLIO_CONTENT.buildings[tourStep];
 
   return (

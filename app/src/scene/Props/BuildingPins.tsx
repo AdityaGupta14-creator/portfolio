@@ -4,12 +4,8 @@ import { useAppStore } from '../../store/useAppStore';
 import { PORTFOLIO_CONTENT } from '../../data/content';
 
 export const BuildingPins: React.FC = () => {
-  const scrollProgress = useAppStore((s) => s.scrollProgress);
-  const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
+  const isVisible = useAppStore((s) => s.focusedBuildingIndex === null && s.scrollProgress > 0.14);
   const focusBuilding = useAppStore((s) => s.focusBuilding);
-
-  // Hidden when drawer is active or when high in the sky
-  const isVisible = focusedBuildingIndex === null && scrollProgress > 0.14;
 
   if (!isVisible) return null;
 

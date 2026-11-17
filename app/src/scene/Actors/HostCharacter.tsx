@@ -9,6 +9,7 @@ import { SpeechBubble } from './SpeechBubble';
 import { attachGlassesToHead } from '../Glasses';
 import { DEFAULT_GLASSES_CONFIG } from '../../data/glassesConfig';
 import { perfRenderTracker } from '../../utils/perfTracker';
+import { scrollState } from '../../utils/scrollState';
 
 // ── Waypoint & Stop Constants ────────────────────────────────────────────────
 // 5 Hero Building Stops along the North Sidewalk (in front of each building entrance)
@@ -127,7 +128,6 @@ function applyAvatarMaterials(avatar: THREE.Group) {
 export const HostCharacter: React.FC = () => {
   perfRenderTracker.mark('HostCharacter');
   const rootRef = useRef<THREE.Group>(null);
-  const scrollProgress = useAppStore((s) => s.scrollProgress);
   const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
   const skipAnimation = useAppStore((s) => s.skipAnimation);
   const navJumpTimestamp = useAppStore((s) => s.navJumpTimestamp);
@@ -143,6 +143,8 @@ export const HostCharacter: React.FC = () => {
   const groundRingRef = useRef<THREE.Mesh>(null);
   const ringMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const nameTagRef = useRef<HTMLDivElement>(null);
+  const headBoneRef = useRef<THREE.Object3D | null>(null);
+  const scratchWp = useRef(new THREE.Vector3());
 
   // Animation & state refs
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
@@ -155,7 +157,10 @@ export const HostCharacter: React.FC = () => {
   const currentActionRef = useRef<THREE.AnimationAction | null>(null);
 
   // Position & orientation tracking
-  const initialPos = useMemo(() => getActiveTarget(scrollProgress, focusedBuildingIndex), []);
+  const initialPos = useMemo(
+    () => getActiveTarget(scrollState.getSmoothedProgress(), focusedBuildingIndex),
+    []
+  );
   const currentPos = useRef<THREE.Vector3>(initialPos.clone());
   const activeWaypointTarget = useRef<THREE.Vector3>(initialPos.clone());
   const finalStopTarget = useRef<THREE.Vector3>(initialPos.clone());
@@ -398,6 +403,7 @@ export const HostCharacter: React.FC = () => {
   // ── Frame Loop: Waypoint Navigation, Stride Physics & State Transitions ────
   useFrame((_, delta) => {
     const clampedDelta = Math.min(delta, 0.05);
+    const currentP = scrollState.getSmoothedProgress();
 
     if (mixerRef.current) {
       mixerRef.current.update(clampedDelta);
@@ -406,11 +412,12 @@ export const HostCharacter: React.FC = () => {
     if (typeof window !== 'undefined') {
       let headWorldPos: number[] | null = null;
       if (rootRef.current) {
-        const headBone = rootRef.current.getObjectByName('mixamorigHead');
-        if (headBone) {
-          const wp = new THREE.Vector3();
-          headBone.getWorldPosition(wp);
-          headWorldPos = wp.toArray();
+        if (!headBoneRef.current) {
+          headBoneRef.current = rootRef.current.getObjectByName('mixamorigHead') || null;
+        }
+        if (headBoneRef.current) {
+          headBoneRef.current.getWorldPosition(scratchWp.current);
+          headWorldPos = [scratchWp.current.x, scratchWp.current.y, scratchWp.current.z];
         }
       }
 
@@ -422,11 +429,11 @@ export const HostCharacter: React.FC = () => {
         walkRunning: actionsRef.current.walk ? actionsRef.current.walk.isRunning() : false,
         waveRunning: actionsRef.current.wave ? actionsRef.current.wave.isRunning() : false,
         state: hostStateRef.current,
-        currentPos: currentPos.current.toArray(),
-        activeTarget: activeWaypointTarget.current.toArray(),
+        currentPos: [currentPos.current.x, currentPos.current.y, currentPos.current.z],
+        activeTarget: [activeWaypointTarget.current.x, activeWaypointTarget.current.y, activeWaypointTarget.current.z],
         headWorldPos,
         currentYaw: currentYaw.current,
-        scrollProgress,
+        scrollProgress: currentP,
         focusedBuildingIndex,
       };
       (window as any).__HOST_POS__ = currentPos.current;
@@ -457,7 +464,7 @@ export const HostCharacter: React.FC = () => {
     if (!avatarGroup || !rootRef.current) return;
 
     // 1. Determine destination stop
-    const targetStop = getActiveTarget(scrollProgress, focusedBuildingIndex);
+    const targetStop = getActiveTarget(currentP, focusedBuildingIndex);
 
     // Initial load frame snap
     if (isFirstFrame.current) {
@@ -470,7 +477,7 @@ export const HostCharacter: React.FC = () => {
     }
 
     // Instant Skip Handling: if jumping straight to Hub overview, snap to Hub
-    if (scrollProgress > 0.95 && currentPos.current.distanceTo(HOST_HUB_STOP) > 20.0) {
+    if (currentP > 0.95 && currentPos.current.distanceTo(HOST_HUB_STOP) > 20.0) {
       currentPos.current.copy(HOST_HUB_STOP);
       activeWaypointTarget.current.copy(HOST_HUB_STOP);
       finalStopTarget.current.copy(HOST_HUB_STOP);

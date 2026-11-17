@@ -7,12 +7,8 @@ import { PORTFOLIO_CONTENT } from '../data/content';
 const ICONS = [User, Zap, FolderGit2, FileText, Send];
 
 export const DestinationHub: React.FC = () => {
-  const scrollProgress = useAppStore((s) => s.scrollProgress);
-  const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
+  const isVisible = useAppStore((s) => s.focusedBuildingIndex === null && s.scrollProgress > 0.91);
   const focusBuilding = useAppStore((s) => s.focusBuilding);
-
-  // Strict mutual exclusivity: Only show when scroll reaches end (> 0.91) and drawer is closed
-  const isVisible = focusedBuildingIndex === null && scrollProgress > 0.91;
 
   return (
     <AnimatePresence>

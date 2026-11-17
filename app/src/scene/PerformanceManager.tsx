@@ -8,7 +8,6 @@ export const PerformanceManager: React.FC = () => {
   const shadowsEnabled = useAppStore((s) => s.shadowsEnabled);
   const isLowPerformanceMode = useAppStore((s) => s.isLowPerformanceMode);
   const activateLowPerformanceMode = useAppStore((s) => s.activateLowPerformanceMode);
-  const scrollProgress = useAppStore((s) => s.scrollProgress);
 
   const frameCount = useRef(0);
   const lastTime = useRef(performance.now());
@@ -43,7 +42,8 @@ export const PerformanceManager: React.FC = () => {
       lastTime.current = now;
 
       // Auto-scale if FPS drops below 40 for 2 consecutive seconds while actively scrolling
-      if (fps < 40 && scrollProgress > 0.08) {
+      const currentP = useAppStore.getState().scrollProgress;
+      if (fps < 40 && currentP > 0.08) {
         lowFpsSamples.current++;
         if (lowFpsSamples.current >= 2) {
           activateLowPerformanceMode();
