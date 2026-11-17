@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { CityScene } from './CityScene';
 import { CameraController } from './CameraController';
 import { PerformanceManager } from './PerformanceManager';
+import { PerfCanvasTracker } from './PerfCanvasTracker';
 import { useAppStore } from '../store/useAppStore';
 
 export const CityCanvas: React.FC = () => {
@@ -27,6 +28,7 @@ export const CityCanvas: React.FC = () => {
           gl.shadowMap.type = THREE.PCFSoftShadowMap;
         }}
       >
+        <PerfCanvasTracker />
         <PerformanceManager />
         <CameraController />
         <Suspense fallback={null}>

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { useAppStore } from '../store/useAppStore';
 import { PORTFOLIO_CONTENT } from '../data/content';
 import { BUILDING_PROXIES, RAW_BOUNDS } from '../data/buildings';
+import { perfRenderTracker } from '../utils/perfTracker';
 
 interface Keyframe {
   p: number;
@@ -90,6 +91,7 @@ function getCurrentStopName(p: number, focusedIndex: number | null): string {
 }
 
 export const CameraController: React.FC = () => {
+  perfRenderTracker.mark('CameraController');
   const { camera, scene } = useThree();
   const scrollProgress = useAppStore((s) => s.scrollProgress);
   const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);

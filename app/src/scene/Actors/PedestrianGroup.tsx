@@ -13,6 +13,7 @@ import {
   PEDESTRIAN_STRIDE,
 } from '../../data/pedestrianConfig';
 import { attachGlassesToHead, GlassesStyle } from '../Glasses';
+import { perfRenderTracker } from '../../utils/perfTracker';
 import { DEFAULT_GLASSES_CONFIG } from '../../data/glassesConfig';
 import {
   Pedestrian,
@@ -711,6 +712,7 @@ const StaticStorefrontExtras: React.FC = () => {
 //  EXPORTED PEDESTRIAN GROUP COMPONENT
 // ═════════════════════════════════════════════════════════════════════════════
 export const PedestrianGroup: React.FC = () => {
+  perfRenderTracker.mark('PedestrianGroup');
   return (
     <group name="PedestrianGroup">
       {/* 8 Diversified Mixamo Walkers with clean PedestrianSystem module */}

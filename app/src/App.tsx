@@ -10,6 +10,7 @@ import { TourBanner } from './components/TourBanner';
 import { DestinationHub } from './components/DestinationHub';
 import { BuildingDrawer } from './components/BuildingDrawer';
 import { ClassicView } from './components/ClassicView';
+import { PerfOverlay } from './components/PerfOverlay';
 import { Toast } from './components/Toast';
 import { AssetDebugPage } from './components/AssetDebugPage';
 import { AnimDebugPage } from './components/AnimDebugPage';
@@ -178,6 +179,9 @@ export const App: React.FC = () => {
 
       {/* Global Notifications */}
       <Toast />
+
+      {/* Dev-only Performance Telemetry HUD (?perf=1) */}
+      <PerfOverlay />
 
       {viewMode === '3d' ? (
         <>

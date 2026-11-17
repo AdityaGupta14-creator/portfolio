@@ -13,6 +13,7 @@ import { DistantSkyline } from '../Environment/DistantSkyline';
 import { TopDownDebugView } from './TopDownDebugView';
 import { StorefrontSignsAndAwnings } from './StorefrontSignsAndAwnings';
 import { useAppStore } from '../../store/useAppStore';
+import { perfRenderTracker } from '../../utils/perfTracker';
 
 // Preload optimized city model with MeshoptDecoder
 useGLTF.preload('/models/city.opt.glb', true, true, (loader) => {
@@ -20,6 +21,7 @@ useGLTF.preload('/models/city.opt.glb', true, true, (loader) => {
 });
 
 export const SketchfabCity: React.FC = () => {
+  perfRenderTracker.mark('SketchfabCity');
   const gltf = useGLTF('/models/city.opt.glb', true, true, (loader) => {
     loader.setMeshoptDecoder(MeshoptDecoder);
   });

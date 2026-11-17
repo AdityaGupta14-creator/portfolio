@@ -5,6 +5,7 @@ import { useGLTF } from '@react-three/drei';
 import { crosswalkManager, CarTelemetry } from '../../data/crosswalks';
 import { getAllCrosswalkCycles } from '../../sim/crosswalkCycle';
 import { useAppStore } from '../../store/useAppStore';
+import { perfRenderTracker } from '../../utils/perfTracker';
 import {
   CarType,
   CarInstance,
@@ -94,6 +95,7 @@ interface RuntimeCar {
 }
 
 export const TrafficGroup: React.FC = () => {
+  perfRenderTracker.mark('TrafficGroup');
   const isGoldenEvening = useAppStore((s) => s.isGoldenEvening);
   const skyMode = useAppStore((s) => s.skyMode);
   const isTrafficDebug = useAppStore((s) => s.isTrafficDebug);

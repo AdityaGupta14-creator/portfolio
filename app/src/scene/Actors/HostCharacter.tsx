@@ -8,6 +8,7 @@ import { BUILDING_PROXIES, RAW_BOUNDS } from '../../data/buildings';
 import { SpeechBubble } from './SpeechBubble';
 import { attachGlassesToHead } from '../Glasses';
 import { DEFAULT_GLASSES_CONFIG } from '../../data/glassesConfig';
+import { perfRenderTracker } from '../../utils/perfTracker';
 
 // ── Waypoint & Stop Constants ────────────────────────────────────────────────
 // 5 Hero Building Stops along the North Sidewalk (in front of each building entrance)
@@ -124,6 +125,7 @@ function applyAvatarMaterials(avatar: THREE.Group) {
 }
 
 export const HostCharacter: React.FC = () => {
+  perfRenderTracker.mark('HostCharacter');
   const rootRef = useRef<THREE.Group>(null);
   const scrollProgress = useAppStore((s) => s.scrollProgress);
   const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);

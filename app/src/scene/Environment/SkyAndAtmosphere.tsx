@@ -9,6 +9,7 @@ import {
   SkyMode,
 } from '../../data/skyModes';
 import { materials } from '../../utils/proceduralTextures';
+import { perfRenderTracker } from '../../utils/perfTracker';
 
 // Preload the cartoon sky GLB asset once
 useGLTF.preload(SKY_MODEL_CONFIG.modelPath);
@@ -123,6 +124,7 @@ interface BirdData {
 }
 
 export const SkyAndAtmosphere: React.FC = () => {
+  perfRenderTracker.mark('SkyAndAtmosphere');
   const skyMode = useAppStore((s) => s.skyMode);
   const isLowPerformanceMode = useAppStore((s) => s.isLowPerformanceMode);
   const { scene, gl } = useThree();

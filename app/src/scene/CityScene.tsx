@@ -12,8 +12,10 @@ import { PedestrianGroup } from './Actors/PedestrianGroup';
 import { HostCharacter } from './Actors/HostCharacter';
 import { useAppStore } from '../store/useAppStore';
 import { PORTFOLIO_CONTENT } from '../data/content';
+import { perfRenderTracker } from '../utils/perfTracker';
 
 export const CityScene: React.FC = () => {
+  perfRenderTracker.mark('CityScene');
   const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
   const useOldCity = useAppStore((s) => s.useOldCity);
   const spotlightRef = useRef<THREE.SpotLight>(null);
