@@ -277,20 +277,25 @@ const MixamoWalkingPedestrians: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      Object.defineProperty(window, '__pedOverlayData', {
+        get: () => pedestrianSystem.getTelemetry(),
+        configurable: true,
+      });
+      Object.defineProperty(window, '__redPedestrianCount', {
+        get: () => pedestrianSystem.getRedCount(),
+        configurable: true,
+      });
+    }
+  }, []);
+
   // Frame Simulation Tick
-  useFrame((_, delta) => {
+  useFrame(({ camera }, delta) => {
     if (!isReady) return;
 
-    // PedestrianSystem.update(dt) runs every frame for every pedestrian in the strict order
-    pedestrianSystem.update(delta);
-
-    // Expose telemetry on window for browser testing & inspection
-    if (typeof window !== 'undefined') {
-      const telem = pedestrianSystem.getTelemetry();
-      const redCount = pedestrianSystem.getRedCount();
-      (window as any).__pedOverlayData = telem;
-      (window as any).__redPedestrianCount = redCount;
-    }
+    // PedestrianSystem.update(dt, cameraPos) with distance LOD and zero per-frame telemetry allocation
+    pedestrianSystem.update(delta, camera.position);
 
     if (isPedestrianDebug) {
       debugTickRef.current += delta;

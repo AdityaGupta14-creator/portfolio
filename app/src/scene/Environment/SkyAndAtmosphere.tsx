@@ -14,6 +14,8 @@ import { perfRenderTracker } from '../../utils/perfTracker';
 // Preload the cartoon sky GLB asset once
 useGLTF.preload(SKY_MODEL_CONFIG.modelPath);
 
+const _scratchSunPos = new THREE.Vector3();
+
 // ── 1. Sky Dome Shader: Vertical Gradient + Celestial Sun Glow ─────────────
 const skyVertexShader = /* glsl */ `
   varying vec3 vWorldPosition;
@@ -26,6 +28,7 @@ const skyVertexShader = /* glsl */ `
 
 const skyFragmentShader = /* glsl */ `
   uniform vec3 uHorizon;
+  uniform vec3 uMiddle;
   uniform vec3 uZenith;
   uniform vec3 uSunPosition;
   uniform vec3 uSunColor;
@@ -36,12 +39,17 @@ const skyFragmentShader = /* glsl */ `
     vec3 dir = normalize(vWorldPosition);
     float h = max(dir.y, 0.0);
     float t = pow(h, uExponent);
-    vec3 color = mix(uHorizon, uZenith, t);
+    
+    // Smooth 3-stop vertical gradient for natural atmospheric transition
+    vec3 color = t < 0.45
+      ? mix(uHorizon, uMiddle, t / 0.45)
+      : mix(uMiddle, uZenith, (t - 0.45) / 0.55);
 
-    // Soft celestial sun/moon glow blended directly into the dome
+    // Radiant celestial sun glow blended directly into the dome
     vec3 sunDir = normalize(uSunPosition);
     float sunDot = max(dot(dir, sunDir), 0.0);
-    float sunGlow = pow(sunDot, 8.0) * 0.28 + pow(sunDot, 48.0) * 0.50;
+    // Wide atmospheric golden haze + luminous core corona
+    float sunGlow = pow(sunDot, 3.5) * 0.45 + pow(sunDot, 12.0) * 0.65 + pow(sunDot, 64.0) * 0.95;
     color += uSunColor * sunGlow;
 
     gl_FragColor = vec4(color, 1.0);
@@ -74,7 +82,31 @@ const starsFragmentShader = /* glsl */ `
   }
 `;
 
-// ── 3. Soft Moon Radial Glow Texture (Canvas Generated) ─────────────────────
+// ── 3. Soft Sun & Moon Radial Glow Textures (Canvas Generated) ──────────────
+let cachedSunGlowTexture: THREE.CanvasTexture | null = null;
+function getSunGlowTexture(): THREE.CanvasTexture {
+  if (cachedSunGlowTexture) return cachedSunGlowTexture;
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    const grad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(255, 255, 245, 1.0)');
+    grad.addColorStop(0.12, 'rgba(255, 242, 195, 0.90)');
+    grad.addColorStop(0.30, 'rgba(255, 220, 145, 0.60)');
+    grad.addColorStop(0.55, 'rgba(255, 185, 105, 0.28)');
+    grad.addColorStop(0.80, 'rgba(255, 165, 85, 0.08)');
+    grad.addColorStop(1.0, 'rgba(255, 155, 75, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 256);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  cachedSunGlowTexture = tex;
+  return tex;
+}
+
 let cachedMoonGlowTexture: THREE.CanvasTexture | null = null;
 function getMoonGlowTexture(): THREE.CanvasTexture {
   if (cachedMoonGlowTexture) return cachedMoonGlowTexture;
@@ -134,6 +166,7 @@ export const SkyAndAtmosphere: React.FC = () => {
   const sunLightRef = useRef<THREE.DirectionalLight>(null);
   const sunMeshRef = useRef<THREE.Group>(null);
   const haloRef = useRef<THREE.Mesh>(null);
+  const sunGlowSpriteRef = useRef<THREE.Sprite>(null);
 
   const moonGroupRef = useRef<THREE.Group>(null);
   const moonGlowSpriteRef = useRef<THREE.Sprite>(null);
@@ -354,6 +387,7 @@ export const SkyAndAtmosphere: React.FC = () => {
 
   const skyUniforms = useRef({
     uHorizon: { value: initialPalette.skyHorizon.clone() },
+    uMiddle: { value: initialPalette.skyMiddle.clone() },
     uZenith: { value: initialPalette.skyTop.clone() },
     uSunPosition: { value: new THREE.Vector3(...initialPalette.lightPosition) },
     uSunColor: { value: initialPalette.lightColor.clone() },
@@ -556,6 +590,7 @@ export const SkyAndAtmosphere: React.FC = () => {
 
     // 2. Apply to Sky Dome Shader Uniforms
     skyUniforms.current.uHorizon.value.copy(cur.skyHorizon);
+    skyUniforms.current.uMiddle.value.copy(cur.skyMiddle);
     skyUniforms.current.uZenith.value.copy(cur.skyTop);
     skyUniforms.current.uSunPosition.value.set(...cur.lightPosition);
     skyUniforms.current.uSunColor.value.copy(cur.lightColor);
@@ -671,11 +706,16 @@ export const SkyAndAtmosphere: React.FC = () => {
       sunMeshRef.current.visible = isSunVisible;
       if (isSunVisible) {
         // Position sun on celestial sphere along light direction
-        const sunPos = new THREE.Vector3(...cur.lightPosition).normalize().multiplyScalar(220);
-        sunMeshRef.current.position.copy(sunPos);
+        _scratchSunPos.set(cur.lightPosition[0], cur.lightPosition[1], cur.lightPosition[2]).normalize().multiplyScalar(220);
+        sunMeshRef.current.position.copy(_scratchSunPos);
         if (haloRef.current) {
-          haloRef.current.scale.setScalar(1 + Math.sin(elapsed * 1.8) * 0.05);
-          (haloRef.current.material as THREE.MeshBasicMaterial).opacity = (1.0 - cur.moonOpacity) * 0.22;
+          haloRef.current.scale.setScalar(1 + Math.sin(elapsed * 1.8) * 0.06);
+          (haloRef.current.material as THREE.MeshBasicMaterial).opacity = (1.0 - cur.moonOpacity) * 0.42;
+        }
+        if (sunGlowSpriteRef.current) {
+          const pulse = 1.0 + Math.sin(elapsed * 1.2) * 0.05;
+          sunGlowSpriteRef.current.scale.set(180 * pulse, 180 * pulse, 1);
+          (sunGlowSpriteRef.current.material as THREE.SpriteMaterial).opacity = (1.0 - cur.moonOpacity) * 0.72;
         }
       }
     }
@@ -737,18 +777,34 @@ export const SkyAndAtmosphere: React.FC = () => {
         shadow-bias={-0.0005}
       />
 
-      {/* ── Sun Mesh & Corona Halo (Visible in Morning & Evening) ───────── */}
+      {/* ── Sun Mesh, Halo & Radiant Sun Glow Sprite (Visible in Morning & Evening) ── */}
       <group ref={sunMeshRef} position={[120, 110, -180]}>
+        {/* Soft Radiant Sun Glow Sprite */}
+        <sprite
+          ref={sunGlowSpriteRef}
+          position={[0, 0, -2]}
+          scale={[180, 180, 1]}
+          material={
+            new THREE.SpriteMaterial({
+              map: getSunGlowTexture(),
+              transparent: true,
+              opacity: 0.72,
+              blending: THREE.AdditiveBlending,
+              depthWrite: false,
+              fog: false,
+            })
+          }
+        />
         <mesh>
-          <sphereGeometry args={[14, 32, 32]} />
-          <meshBasicMaterial color={0xfff4d9} fog={false} />
+          <sphereGeometry args={[15, 32, 32]} />
+          <meshBasicMaterial color={0xfffaea} fog={false} />
         </mesh>
         <mesh ref={haloRef}>
-          <sphereGeometry args={[24, 32, 32]} />
+          <sphereGeometry args={[28, 32, 32]} />
           <meshBasicMaterial
-            color={0xffe2a0}
+            color={0xffdf99}
             transparent
-            opacity={0.22}
+            opacity={0.42}
             blending={THREE.AdditiveBlending}
             fog={false}
           />

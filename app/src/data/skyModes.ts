@@ -50,25 +50,25 @@ export const SKY_MODEL_CONFIG = {
 export const SKY_MODE_PALETTES: Record<SkyMode, SkyModePalette> = {
   morning: {
     name: 'Morning',
-    skyTop: new THREE.Color(0x629edb),        // Soft clear blue at zenith
-    skyMiddle: new THREE.Color(0xa6d2f5),     // Light atmospheric blue
-    skyHorizon: new THREE.Color(0xf8c8a8),    // Warm peach glow at horizon
-    fogColor: new THREE.Color(0xf6cdb2),      // Matches horizon warmth seamlessly
-    fogNear: 20,
-    fogFar: 180,
-    cloudTint: new THREE.Color(0xfffdf7),     // Crisp off-white with faint warm highlight
-    cloudOpacity: 0.82,
-    cloudEmissive: new THREE.Color(0xffe8d4),
-    cloudEmissiveIntensity: 0.85,
-    lightColor: new THREE.Color(0xfff3db),    // Warm golden morning sun
-    lightIntensity: 1.35,
-    lightPosition: [60, 80, 40],
-    hemiSky: new THREE.Color(0xf3f8ff),
-    hemiGround: new THREE.Color(0x526071),
-    hemiIntensity: 0.65,
-    ambientColor: new THREE.Color(0xfff6ea),
-    ambientIntensity: 0.45,
-    exposure: 1.05,
+    skyTop: new THREE.Color(0x3e8ee6),        // Rich luminous morning azure
+    skyMiddle: new THREE.Color(0xffe4be),     // Warm luminous golden morning sky transition
+    skyHorizon: new THREE.Color(0xffc699),    // Radiant glowing peach-apricot horizon
+    fogColor: new THREE.Color(0xfacfae),      // Warm golden morning mist
+    fogNear: 25,
+    fogFar: 195,
+    cloudTint: new THREE.Color(0xfffcf5),     // Warm sunlight ivory
+    cloudOpacity: 0.85,
+    cloudEmissive: new THREE.Color(0xffdca8),  // Luminous golden internal cloud glow
+    cloudEmissiveIntensity: 1.45,             // Morning clouds glowing with sunlight
+    lightColor: new THREE.Color(0xfff0d0),    // Radiant warm golden morning sun
+    lightIntensity: 1.80,                     // Brilliant morning key light
+    lightPosition: [42, 85, -65],             // Morning sun visible in sky in front of camera
+    hemiSky: new THREE.Color(0xf6faff),
+    hemiGround: new THREE.Color(0x6b7785),
+    hemiIntensity: 0.82,                      // Bright morning sky bounce
+    ambientColor: new THREE.Color(0xfff3e0),  // Warm ambient morning glow
+    ambientIntensity: 0.58,                   // Radiant morning ambient fill
+    exposure: 1.16,                           // Beautiful luminous HDR exposure
     moonOpacity: 0.0,
     starsOpacity: 0.0,
     windowGlow: 0.0,

@@ -167,6 +167,35 @@ export const HostCharacter: React.FC = () => {
   const currentYaw = useRef<number>(0);
   const isFirstFrame = useRef<boolean>(true);
   const waveTimerRef = useRef<number>(0);
+  const hostDebugObjRef = useRef<{
+    hasAvatar: boolean;
+    hasMixer: boolean;
+    hasWalkAction: boolean;
+    hasWaveAction: boolean;
+    walkRunning: boolean;
+    waveRunning: boolean;
+    state: HostState;
+    currentPos: number[];
+    activeTarget: number[];
+    headWorldPos: number[] | null;
+    currentYaw: number;
+    scrollProgress: number;
+    focusedBuildingIndex: number | null;
+  }>({
+    hasAvatar: false,
+    hasMixer: false,
+    hasWalkAction: false,
+    hasWaveAction: false,
+    walkRunning: false,
+    waveRunning: false,
+    state: 'WAVING',
+    currentPos: [0, 0, 0],
+    activeTarget: [0, 0, 0],
+    headWorldPos: null,
+    currentYaw: 0,
+    scrollProgress: 0,
+    focusedBuildingIndex: null,
+  });
 
   // Helper to crossfade between actions
   const crossfadeToAction = (toAction?: THREE.AnimationAction, duration = CROSSFADE_DURATION) => {
@@ -410,32 +439,41 @@ export const HostCharacter: React.FC = () => {
     }
 
     if (typeof window !== 'undefined') {
-      let headWorldPos: number[] | null = null;
+      const dbg = hostDebugObjRef.current;
+      dbg.hasAvatar = !!avatarGroup;
+      dbg.hasMixer = !!mixerRef.current;
+      dbg.hasWalkAction = !!actionsRef.current.walk;
+      dbg.hasWaveAction = !!actionsRef.current.wave;
+      dbg.walkRunning = actionsRef.current.walk ? actionsRef.current.walk.isRunning() : false;
+      dbg.waveRunning = actionsRef.current.wave ? actionsRef.current.wave.isRunning() : false;
+      dbg.state = hostStateRef.current;
+      dbg.currentPos[0] = currentPos.current.x;
+      dbg.currentPos[1] = currentPos.current.y;
+      dbg.currentPos[2] = currentPos.current.z;
+      dbg.activeTarget[0] = activeWaypointTarget.current.x;
+      dbg.activeTarget[1] = activeWaypointTarget.current.y;
+      dbg.activeTarget[2] = activeWaypointTarget.current.z;
+
       if (rootRef.current) {
         if (!headBoneRef.current) {
           headBoneRef.current = rootRef.current.getObjectByName('mixamorigHead') || null;
         }
         if (headBoneRef.current) {
           headBoneRef.current.getWorldPosition(scratchWp.current);
-          headWorldPos = [scratchWp.current.x, scratchWp.current.y, scratchWp.current.z];
+          if (!dbg.headWorldPos) {
+            dbg.headWorldPos = [0, 0, 0];
+          }
+          dbg.headWorldPos[0] = scratchWp.current.x;
+          dbg.headWorldPos[1] = scratchWp.current.y;
+          dbg.headWorldPos[2] = scratchWp.current.z;
         }
       }
 
-      (window as any).__HOST_DEBUG__ = {
-        hasAvatar: !!avatarGroup,
-        hasMixer: !!mixerRef.current,
-        hasWalkAction: !!actionsRef.current.walk,
-        hasWaveAction: !!actionsRef.current.wave,
-        walkRunning: actionsRef.current.walk ? actionsRef.current.walk.isRunning() : false,
-        waveRunning: actionsRef.current.wave ? actionsRef.current.wave.isRunning() : false,
-        state: hostStateRef.current,
-        currentPos: [currentPos.current.x, currentPos.current.y, currentPos.current.z],
-        activeTarget: [activeWaypointTarget.current.x, activeWaypointTarget.current.y, activeWaypointTarget.current.z],
-        headWorldPos,
-        currentYaw: currentYaw.current,
-        scrollProgress: currentP,
-        focusedBuildingIndex,
-      };
+      dbg.currentYaw = currentYaw.current;
+      dbg.scrollProgress = currentP;
+      dbg.focusedBuildingIndex = focusedBuildingIndex;
+
+      (window as any).__HOST_DEBUG__ = dbg;
       (window as any).__HOST_POS__ = currentPos.current;
       (window as any).__HOST_STATE__ = hostStateRef.current;
     }

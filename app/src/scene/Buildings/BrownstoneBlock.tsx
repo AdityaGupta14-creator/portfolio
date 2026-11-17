@@ -36,7 +36,8 @@ export const BrownstoneBlock: React.FC<BrownstoneBlockProps> = ({
       groupRef.current.position.y += (targetY - groupRef.current.position.y) * 0.12;
 
       const targetScale = isFocused ? 1.015 : 1.0;
-      groupRef.current.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.12);
+      const curScale = groupRef.current.scale.x;
+      groupRef.current.scale.setScalar(curScale + (targetScale - curScale) * 0.12);
     }
   });
 

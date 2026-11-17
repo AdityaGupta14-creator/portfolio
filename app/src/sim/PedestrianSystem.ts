@@ -38,6 +38,7 @@ export interface Pedestrian {
   isCrossingRoad: boolean;
   isRed: boolean;
   redReason: string;
+  animSkipCount?: number;
 }
 
 export interface PedestrianTelemetry {
@@ -181,7 +182,7 @@ export class PedestrianSystem {
    * (e) mixer.update(dt)
    * Nothing else is allowed to set actions or timeScale.
    */
-  public update(dt: number) {
+  public update(dt: number, cameraPos?: THREE.Vector3) {
     const clampedDt = Math.min(dt, 0.05);
     this.currentTime += clampedDt;
 
@@ -190,7 +191,8 @@ export class PedestrianSystem {
     for (let i = 0; i < count; i++) {
       const ped = this.pedestrians[i];
       const pos = ped.mesh.position;
-      const prevPos = pos.clone();
+      const prevX = ped.lastPosition.x;
+      const prevZ = ped.lastPosition.z;
 
       // ── (a) DECIDE DESIRED VELOCITY ALONG THE ROUTE ────────────────────────
       const currentWaypoint = ped.route[ped.waypointIndex];
@@ -347,7 +349,7 @@ export class PedestrianSystem {
       ped.mesh.rotation.y = ped.yaw;
 
       // ── (d) ANIMATION: MEASURE ACTUAL SPEED & SYNCHRONIZE ──────────────────
-      const distanceMoved = pos.distanceTo(prevPos);
+      const distanceMoved = Math.hypot(pos.x - prevX, pos.z - prevZ);
       const instantSpeed = distanceMoved / clampedDt;
       ped.actualSpeed = THREE.MathUtils.lerp(ped.actualSpeed, instantSpeed, Math.min(1.0, 10.0 * clampedDt));
 
@@ -376,8 +378,18 @@ export class PedestrianSystem {
       }
 
       // ── (e) MIXER.UPDATE(dt) ───────────────────────────────────────────────
-      // Nothing else is allowed to set actions or timeScale.
-      ped.mixer.update(clampedDt);
+      // Distance culling / LOD: skip or throttle skeletal animation evaluation for distant pedestrians
+      const distToCamera = cameraPos ? Math.hypot(pos.x - cameraPos.x, pos.z - cameraPos.z) : 0;
+      if (!cameraPos || distToCamera < 45.0) {
+        ped.mixer.update(clampedDt);
+      } else if (distToCamera < 85.0) {
+        ped.animSkipCount = (ped.animSkipCount || 0) + 1;
+        if (ped.animSkipCount >= 3) {
+          ped.mixer.update(clampedDt * ped.animSkipCount);
+          ped.animSkipCount = 0;
+        }
+      }
+      // Beyond 85m (hidden in fog/occluded): mixer update skipped, zero bone recalculation
 
       // ── WATCHDOGS ──────────────────────────────────────────────────────────
       // 1. Stuck Watchdog: If position hasn't changed for 5s while not deliberately waiting

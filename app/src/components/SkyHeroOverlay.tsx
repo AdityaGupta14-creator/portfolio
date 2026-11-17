@@ -6,11 +6,14 @@ import { PORTFOLIO_CONTENT } from '../data/content';
 
 export const SkyHeroOverlay: React.FC = () => {
   const scrollProgress = useAppStore((s) => s.scrollProgress);
+  const skyMode = useAppStore((s) => s.skyMode);
   const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
   const startStreetTour = useAppStore((s) => s.startStreetTour);
   const focusBuilding = useAppStore((s) => s.focusBuilding);
   const isTopDownDebug = useAppStore((s) => s.isTopDownDebug);
   const isLoading = useAppStore((s) => s.isLoading);
+
+  const isMorning = skyMode === 'morning';
 
   // Check URL query parameter: hide performance/stage badges unless ?debug=1
   const isDebug =
@@ -87,7 +90,13 @@ export const SkyHeroOverlay: React.FC = () => {
           className="fixed inset-0 z-20 flex flex-col items-center justify-between px-4 sm:px-6 py-10 sm:py-16 text-center select-none"
         >
           {/* Subtle contrast gradient scrim across whole viewport for text clarity */}
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/40 via-slate-950/15 to-slate-950/35 pointer-events-none -z-20" />
+          <div
+            className={`absolute inset-0 pointer-events-none -z-20 ${
+              isMorning
+                ? 'bg-gradient-to-b from-slate-900/10 via-transparent to-slate-950/20'
+                : 'bg-gradient-to-b from-slate-950/40 via-slate-950/15 to-slate-950/35'
+            }`}
+          />
 
           {/* Top Status & Performance Bar: Only visible when ?debug=1 */}
           <div className="w-full max-w-4xl flex items-center justify-between px-2 pt-2 min-h-[36px]">
@@ -117,10 +126,11 @@ export const SkyHeroOverlay: React.FC = () => {
           <div className="relative flex flex-col items-center max-w-3xl my-auto px-4 py-6 w-full">
             {/* Pure radial gradient scrim feathered completely to 0 opacity without rectangular backdrop-blur edges */}
             <div
-              className="absolute -inset-x-20 sm:-inset-x-44 -inset-y-24 sm:-inset-y-36 pointer-events-none -z-10"
+              className="absolute -inset-x-14 sm:-inset-x-28 -inset-y-16 sm:-inset-y-24 pointer-events-none -z-10"
               style={{
-                background:
-                  'radial-gradient(ellipse 65% 55% at 50% 50%, rgba(2, 6, 23, 0.72) 0%, rgba(2, 6, 23, 0.45) 45%, rgba(2, 6, 23, 0.15) 75%, rgba(2, 6, 23, 0) 100%)',
+                background: isMorning
+                  ? 'radial-gradient(ellipse 65% 55% at 50% 50%, rgba(15, 23, 42, 0.40) 0%, rgba(15, 23, 42, 0.20) 45%, rgba(15, 23, 42, 0.05) 75%, rgba(15, 23, 42, 0) 100%)'
+                  : 'radial-gradient(ellipse 65% 55% at 50% 50%, rgba(2, 6, 23, 0.72) 0%, rgba(2, 6, 23, 0.45) 45%, rgba(2, 6, 23, 0.15) 75%, rgba(2, 6, 23, 0) 100%)',
               }}
               aria-hidden="true"
             />

@@ -14,6 +14,20 @@ import {
 
 useGLTF.preload('/models/cars.web.glb');
 
+// Scratch vectors & telemetries to guarantee zero allocations per frame in useFrame
+const _scratchPos = new THREE.Vector3();
+const _scratchTangent = new THREE.Vector3();
+const _scratchAheadTangent = new THREE.Vector3();
+const _scratchCarTelemetry: CarTelemetry = {
+  id: 0,
+  x: 0,
+  z: 0,
+  dir: 1,
+  speed: 0,
+  worldSpeed: 0,
+  isBraking: false,
+};
+
 // ── 1. Continuous Closed-Loop Traffic Track ──────────────────────────────────
 // Road surface is at Y = -0.09.
 // Eastbound lane: Z = 2.1 (traffic drives toward +X on the South side)
@@ -254,6 +268,25 @@ export const TrafficGroup: React.FC = () => {
     };
   }, [sourceScene, fleet]);
 
+  const fleetRef = useRef(fleet);
+  fleetRef.current = fleet;
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      Object.defineProperty(window, '__carsTelemetry', {
+        get: () =>
+          fleetRef.current.map((c) => ({
+            id: c.id,
+            type: c.cfg.type,
+            speed: c.currentSpeed.toFixed(2),
+            isBraking: c.isBraking,
+            stopReason: c.stopReason,
+          })),
+        configurable: true,
+      });
+    }
+  }, []);
+
   // ── Frame Simulation Loop ──────────────────────────────────────────────────
   useFrame(({ camera }, delta) => {
     const clampedDelta = Math.min(delta, 0.05);
@@ -261,7 +294,6 @@ export const TrafficGroup: React.FC = () => {
     // Update crosswalk countdown timers
     crosswalkManager.tickClearCountdown(clampedDelta);
 
-    const carTelemetries: CarTelemetry[] = [];
     const carCount = fleet.length;
 
     fleet.forEach((car, idx) => {
@@ -299,21 +331,20 @@ export const TrafficGroup: React.FC = () => {
       // Determine traffic direction on straightaways (+1 for Eastbound, -1 for Westbound)
       const currentDir: 1 | -1 = pos.z > -0.8 ? 1 : -1;
 
-      const telemetry: CarTelemetry = {
-        id: car.id,
-        x: pos.x,
-        z: pos.z,
-        dir: currentDir,
-        speed: car.currentSpeed / 60,
-        worldSpeed: car.currentSpeed,
-        isBraking: car.isBraking,
-      };
+      // Mutate preallocated scratch telemetry (zero allocation)
+      _scratchCarTelemetry.id = car.id;
+      _scratchCarTelemetry.x = pos.x;
+      _scratchCarTelemetry.z = pos.z;
+      _scratchCarTelemetry.dir = currentDir;
+      _scratchCarTelemetry.speed = car.currentSpeed / 60;
+      _scratchCarTelemetry.worldSpeed = car.currentSpeed;
+      _scratchCarTelemetry.isBraking = car.isBraking;
 
       let shouldBrakeForCrosswalk = false;
       let currentStopReason = 'Cruising normally (CARS_GO)';
 
       for (const ctrl of getAllCrosswalkCycles()) {
-        const decision = ctrl.evaluateCar(telemetry, false);
+        const decision = ctrl.evaluateCar(_scratchCarTelemetry, false);
         if (decision.shouldStop) {
           shouldBrakeForCrosswalk = true;
           currentStopReason = decision.reason;
@@ -353,14 +384,14 @@ export const TrafficGroup: React.FC = () => {
       const deltaD = car.currentSpeed * clampedDelta;
       car.s = (car.s + deltaD) % trackLength;
 
-      // ── 4. Position & Path Tangent Orientation ────────────────────────────
+      // ── 4. Position & Path Tangent Orientation (Zero Allocations) ─────────
       const u = car.s / trackLength;
-      const newPos = loopCurve.getPointAt(u);
-      const tangent = loopCurve.getTangentAt(u);
-      pos.copy(newPos);
+      loopCurve.getPointAt(u, _scratchPos);
+      loopCurve.getTangentAt(u, _scratchTangent);
+      pos.copy(_scratchPos);
 
       // Target yaw from path tangent
-      const targetYaw = Math.atan2(tangent.x, tangent.z);
+      const targetYaw = Math.atan2(_scratchTangent.x, _scratchTangent.z);
       // Smooth yaw rotation across loop wrap
       let yawDiff = targetYaw - car.headingYaw;
       while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
@@ -369,8 +400,8 @@ export const TrafficGroup: React.FC = () => {
 
       // ── 5. Steering Angle in Turns (up to 25 degrees) ──────────────────────
       const lookAheadU = ((car.s + 2.4) % trackLength) / trackLength;
-      const aheadTangent = loopCurve.getTangentAt(lookAheadU);
-      const aheadYaw = Math.atan2(aheadTangent.x, aheadTangent.z);
+      loopCurve.getTangentAt(lookAheadU, _scratchAheadTangent);
+      const aheadYaw = Math.atan2(_scratchAheadTangent.x, _scratchAheadTangent.z);
       let steerDiff = aheadYaw - car.headingYaw;
       while (steerDiff > Math.PI) steerDiff -= Math.PI * 2;
       while (steerDiff < -Math.PI) steerDiff += Math.PI * 2;
@@ -432,25 +463,12 @@ export const TrafficGroup: React.FC = () => {
           ax.visible = isTrafficDebug;
         });
       }
-
-      // Collect telemetry for pedestrians
-      carTelemetries.push(telemetry);
     });
 
     // Update crosswalk cycle timers
     getAllCrosswalkCycles().forEach((ctrl) => {
       ctrl.update(clampedDelta, 0);
     });
-
-    if (typeof window !== 'undefined') {
-      (window as any).__carsTelemetry = fleet.map((c) => ({
-        id: c.id,
-        type: c.cfg.type,
-        speed: c.currentSpeed.toFixed(2),
-        isBraking: c.isBraking,
-        stopReason: c.stopReason,
-      }));
-    }
   });
 
   return (
