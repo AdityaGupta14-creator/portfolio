@@ -1,12 +1,15 @@
 import React from 'react';
-import { Layout, Box, Server, Wrench } from 'lucide-react';
+import { Layout, Box, Server, Wrench, Code2, Database, Brain } from 'lucide-react';
 import { PORTFOLIO_CONTENT } from '../../data/content';
 
 const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
+  Code2,
   Layout,
-  Box,
   Server,
+  Database,
+  Brain,
   Wrench,
+  Box,
 };
 
 export const SkillsPanel: React.FC = () => {

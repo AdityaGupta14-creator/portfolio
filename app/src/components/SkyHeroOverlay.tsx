@@ -115,15 +115,21 @@ export const SkyHeroOverlay: React.FC = () => {
               </span>
             </motion.h1>
 
-            {/* Subline */}
-            <motion.p
+            {/* Subline with Open to Internships Indicator */}
+            <motion.div
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.9, ease: 'easeOut', delay: 0.35 }}
-              className="mt-4 sm:mt-5 font-display text-base sm:text-xl font-semibold text-slate-200 drop-shadow-md max-w-2xl"
+              className="mt-4 sm:mt-5 flex flex-wrap items-center justify-center gap-3 max-w-2xl"
             >
-              {PORTFOLIO_CONTENT.personal.name} · {PORTFOLIO_CONTENT.personal.role}
-            </motion.p>
+              <span className="font-display text-base sm:text-xl font-semibold text-slate-200 drop-shadow-md">
+                {PORTFOLIO_CONTENT.personal.name} · {PORTFOLIO_CONTENT.personal.role}
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-bold uppercase tracking-wider shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Open to internships
+              </span>
+            </motion.div>
 
             {/* Description */}
             <motion.p
@@ -132,7 +138,7 @@ export const SkyHeroOverlay: React.FC = () => {
               transition={{ duration: 0.8, ease: 'easeOut', delay: 0.55 }}
               className="mt-2 text-slate-300 text-xs sm:text-sm md:text-base font-medium leading-relaxed max-w-lg drop-shadow"
             >
-              Explore an interactive living avenue built with Three.js, React Three Fiber, and real-time physics.
+              Second-year B.Tech ECS student building full-stack web and mobile apps with React, Next.js, Node.js, and Python.
             </motion.p>
 
             {/* Actions: Primary Button & Skip Link */}

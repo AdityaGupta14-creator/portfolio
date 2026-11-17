@@ -108,6 +108,26 @@ export const ClassicView: React.FC = () => {
           </section>
         );
       })}
+
+      {/* Footer */}
+      <footer className="pt-8 pb-12 text-center text-xs text-slate-400 border-t border-slate-700/60 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div>
+          © 2026 {personal.name} • {personal.role}
+        </div>
+        <div className="flex items-center gap-4">
+          <a href={`mailto:${PORTFOLIO_CONTENT.socials.email}`} className="text-amber-400 hover:underline font-medium">
+            {PORTFOLIO_CONTENT.socials.email}
+          </a>
+          <span>•</span>
+          <a href={PORTFOLIO_CONTENT.socials.github} target="_blank" rel="noopener noreferrer" className="hover:text-white transition font-medium">
+            GitHub
+          </a>
+          <span>•</span>
+          <a href={PORTFOLIO_CONTENT.socials.linkedin} target="_blank" rel="noopener noreferrer" className="hover:text-white transition font-medium">
+            LinkedIn
+          </a>
+        </div>
+      </footer>
     </main>
   );
 };

@@ -112,17 +112,23 @@ export const ContactPanel: React.FC = () => {
 
       {/* Social and Direct Links */}
       <div className="pt-6 mt-6 border-t border-white/10 flex flex-wrap items-center justify-between gap-4 text-xs sm:text-sm text-slate-300">
-        <div className="flex items-center gap-2">
-          <Mail className="w-4 h-4 text-slate-400" />
+        <a
+          href={`mailto:${socials.email}`}
+          className="flex items-center gap-2 hover:text-amber-400 transition"
+          title={`Email ${socials.email}`}
+        >
+          <Mail className="w-4 h-4 text-amber-400" />
           <span className="font-medium">{socials.email}</span>
-        </div>
+        </a>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           {socials.github && (
             <a
               href={socials.github}
               target="_blank"
               rel="noopener noreferrer"
+              aria-label="GitHub Profile"
+              title="GitHub Profile"
               className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-800 hover:bg-amber-400 hover:text-slate-900 transition text-sm shadow-md"
             >
               <GithubIcon className="w-4 h-4" />
@@ -133,6 +139,8 @@ export const ContactPanel: React.FC = () => {
               href={socials.linkedin}
               target="_blank"
               rel="noopener noreferrer"
+              aria-label="LinkedIn Profile"
+              title="LinkedIn Profile"
               className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-800 hover:bg-amber-400 hover:text-slate-900 transition text-sm shadow-md"
             >
               <LinkedinIcon className="w-4 h-4" />
@@ -143,6 +151,8 @@ export const ContactPanel: React.FC = () => {
               href={socials.twitter}
               target="_blank"
               rel="noopener noreferrer"
+              aria-label="Twitter / X Profile"
+              title="Twitter / X Profile"
               className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-800 hover:bg-amber-400 hover:text-slate-900 transition text-sm shadow-md"
             >
               <TwitterIcon className="w-4 h-4" />

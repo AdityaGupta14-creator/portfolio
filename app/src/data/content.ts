@@ -1,27 +1,46 @@
 /**
  * PORTFOLIO DATA CONTENT & TYPE DEFINITIONS
  * All UI panels, 3D signage, and overlays read from this typed configuration.
- * Look for "TODO:" markers to update with your personalized information.
+ * Real credentials and project details for Aditya Gupta.
  */
 
 export interface SkillCategory {
   title: string;
-  icon: string; // Lucide icon identifier or FA equivalent
+  icon: string;
   skills: string[];
 }
 
 export interface ProjectItem {
   id: string;
   title: string;
-  desc: string;
-  role: string;
-  stack: string;
-  problem: string;
-  result: string;
-  tags: string[];
-  live?: string;
+  desc: string; // One-line summary
+  badge?: string;
+  bullets: string[]; // Role bullets
+  tags: string[]; // Tech tags
+  repoUrl?: string; // Code button shown only when set
+  liveUrl?: string; // Live button shown only when set
+  image?: string; // Project screenshot or banner
+  // Compatibility fields
+  role?: string;
+  stack?: string;
+  problem?: string;
+  result?: string;
   code?: string;
-  image?: string;
+  live?: string;
+}
+
+export interface EducationItem {
+  degree: string;
+  institution: string;
+  period: string;
+  cgpa: string;
+  details: string;
+}
+
+export interface AchievementItem {
+  title: string;
+  category: 'Competition' | 'Hackathon' | 'Simulation' | 'Course';
+  badge?: string;
 }
 
 export interface ExperienceItem {
@@ -32,8 +51,8 @@ export interface ExperienceItem {
 }
 
 export interface SocialLinks {
-  github?: string;
-  linkedin?: string;
+  github: string;
+  linkedin: string;
   twitter?: string;
   email: string;
 }
@@ -45,9 +64,9 @@ export interface BuildingMeta {
   storefrontTitle: string;
   subtitle: string;
   awningColor: number; // Hex color for 3D awning
-  trimColor: string;   // Hex string for UI accents
+  trimColor: string; // Hex string for UI accents
   icon: string;
-  xPos: number;        // Street X coordinate in 3D scene
+  xPos: number; // Street X coordinate in 3D scene
 }
 
 export interface PortfolioContent {
@@ -55,8 +74,11 @@ export interface PortfolioContent {
     name: string;
     tagline: string;
     role: string;
+    subline: string;
+    statusTag: string;
     bioIntro: string;
     bioDetails: string[];
+    highlights: string[];
     isOpenToWork: boolean;
     avatarUrl?: string;
   };
@@ -64,39 +86,40 @@ export interface PortfolioContent {
   buildings: BuildingMeta[];
   skills: SkillCategory[];
   projects: ProjectItem[];
+  education: EducationItem[];
+  achievements: AchievementItem[];
   experiences: ExperienceItem[];
 }
 
 export const PORTFOLIO_CONTENT: PortfolioContent = {
   personal: {
-    // TODO: Update your full display name
     name: 'Aditya Gupta',
-    // TODO: Update your professional title
-    role: 'Full-Stack Developer & Creative Engineer',
-    // TODO: Update your headline tagline
-    tagline: 'I build fast, beautiful 3D web experiences.',
-    // TODO: Update your bio intro text
+    role: 'Software Developer | Full-Stack Development',
+    tagline: 'Second-year B.Tech ECS Student • Open to internships',
+    subline: 'Software Developer | Full-Stack Development • Open to internships',
+    statusTag: 'Open to internships',
     bioIntro:
-      'Welcome to The Studio. I specialize in turning complex ideas into intuitive, high-performance digital products. With a strong foundation in both system architecture and visual design, I build experiences that are completely immersive.',
+      'Second-year B.Tech Electronics and Computer Science student at Vidyalankar Institute of Technology, Mumbai (expected graduation 2029, CGPA 9.38 first year).',
     bioDetails: [
-      "When I'm not writing code, you'll usually find me experimenting with 3D motion graphics or exploring the intersection of web performance and creative storytelling.",
-      'Deeply committed to accessibility, clean code architecture, and 60 FPS silky smooth web interactions.',
+      'Builds full-stack web and mobile apps with React, Next.js, Node.js, TypeScript and Python (FastAPI).',
+      'Actively seeking a software internship where I can apply strong fundamentals in system architecture, modern frontend frameworks, and cloud-backed services.',
     ],
-    // TODO: Toggle Open to Work badge in the About panel
+    highlights: [
+      'E-Cell Eureka 2026 Winner',
+      'AI-Prompt Night Winner',
+      'Top 8 TCS College Hackathon',
+    ],
     isOpenToWork: true,
-    // TODO: Add an avatar image path (e.g., '/images/avatar.jpg') if desired
+    // TODO: Add your avatar image path (e.g. '/images/avatar.jpg') if desired
     avatarUrl: '',
   },
 
   socials: {
-    // TODO: Add your personal GitHub URL
-    github: 'https://github.com',
-    // TODO: Add your LinkedIn profile URL
-    linkedin: 'https://linkedin.com',
-    // TODO: Add your X / Twitter handle URL (or leave empty)
+    github: 'https://github.com/AdityaGupta14-creator',
+    linkedin: 'https://www.linkedin.com/in/aditya-gupta-3735a5400/',
+    // TODO: Add your Twitter / X URL if desired
     twitter: '',
-    // TODO: Add your direct contact email address
-    email: 'aditya.gupta.dev@portfolio.io',
+    email: 'ag4034967@gmail.com',
   },
 
   buildings: [
@@ -105,7 +128,7 @@ export const PORTFOLIO_CONTENT: PortfolioContent = {
       number: '101',
       name: 'About Me',
       storefrontTitle: 'THE STUDIO',
-      subtitle: '101 Brownstone Ave • Bio & Story',
+      subtitle: '101 Brownstone Ave • Bio & Profile',
       awningColor: 0x991f2e,
       trimColor: '#f87171',
       icon: 'User',
@@ -116,7 +139,7 @@ export const PORTFOLIO_CONTENT: PortfolioContent = {
       number: '103',
       name: 'Skills',
       storefrontTitle: 'TECH FOUNDRY',
-      subtitle: '103 Brownstone Ave • Engineering Stack',
+      subtitle: '103 Brownstone Ave • Core Toolkit',
       awningColor: 0xe6dac1,
       trimColor: '#fbbf24',
       icon: 'Zap',
@@ -138,7 +161,7 @@ export const PORTFOLIO_CONTENT: PortfolioContent = {
       number: '107',
       name: 'Resume',
       storefrontTitle: 'CAREER ARCHIVE',
-      subtitle: '107 Brownstone Ave • Experience & CV',
+      subtitle: '107 Brownstone Ave • Education & CV',
       awningColor: 0xe6dac1,
       trimColor: '#38bdf8',
       icon: 'FileText',
@@ -158,80 +181,197 @@ export const PORTFOLIO_CONTENT: PortfolioContent = {
   ],
 
   skills: [
-    // TODO: Add, remove or customize your skills and categories
     {
-      title: 'Frontend & UI',
+      title: 'Languages',
+      icon: 'Code2',
+      skills: ['JavaScript', 'TypeScript', 'Python', 'Java'],
+    },
+    {
+      title: 'Frontend',
       icon: 'Layout',
-      skills: ['React', 'Next.js', 'TypeScript', 'Tailwind CSS', 'HTML5 / CSS3'],
+      skills: [
+        'React.js',
+        'Next.js',
+        'TanStack Start',
+        'React Native',
+        'HTML',
+        'CSS',
+        'Tailwind CSS',
+      ],
     },
     {
-      title: '3D Web & Motion',
-      icon: 'Box',
-      skills: ['Three.js', 'WebGL', 'React Three Fiber', 'GSAP', 'Framer Motion'],
-    },
-    {
-      title: 'Backend & Cloud',
+      title: 'Backend',
       icon: 'Server',
-      skills: ['Node.js', 'Python', 'PostgreSQL', 'REST APIs', 'GraphQL'],
+      skills: ['Node.js', 'Express.js', 'FastAPI', 'REST APIs'],
     },
     {
-      title: 'DevOps & Tools',
+      title: 'Database',
+      icon: 'Database',
+      skills: ['MongoDB', 'PostgreSQL', 'Supabase', 'Firebase Authentication'],
+    },
+    {
+      title: 'AI/ML',
+      icon: 'Brain',
+      skills: ['Machine learning fundamentals', 'PennyLane (Quantum ML)'],
+    },
+    {
+      title: 'Tools',
       icon: 'Wrench',
-      skills: ['Git', 'Docker', 'AWS', 'Vercel', 'Figma'],
+      skills: ['Git', 'GitHub', 'Postman', 'VS Code'],
     },
   ],
 
   projects: [
-    // TODO: Replace with your actual project portfolio highlights
     {
-      id: 'p1',
-      title: 'Brownstone Metropolis',
-      desc: 'Photorealistic 3D City Portfolio with procedural street choreography',
-      role: 'Sole Developer & Creative Engineer',
-      stack: 'React, Three.js, R3F, TypeScript, Tailwind',
-      problem:
-        'Standard scrolling portfolios lack visual memorability and spatial immersion for creative engineering roles.',
-      result:
-        'Built a 60fps responsive 3D brownstone environment with procedural textures, articulated pedestrians, traffic, and scroll-linked camera choreography.',
-      tags: ['Three.js', 'R3F', 'Creative', 'TypeScript'],
-      live: 'https://example.com/demo1',
-      code: 'https://github.com/example/brownstone-metropolis',
+      id: 'resqnet',
+      title: 'ResQNet — Emergency Response Mobile App',
+      badge: 'Winner, E-Cell Eureka 2026',
+      desc: 'Emergency response mobile app with automated offline SMS dispatch to the nearest hospitals upon accident detection.',
+      role: 'Frontend & UI Lead',
+      stack: 'React Native, Offline SMS Automation',
+      bullets: [
+        'Built the app frontend (core screens, navigation, reusable UI components, user flows).',
+        'Implemented an automated alert workflow that sends SMS to the five nearest hospitals when an accident is detected.',
+        'Integrated with accident-detection and location services with the team.',
+      ],
+      tags: ['React Native', 'Offline SMS Automation', 'Location Services', 'Mobile UI'],
+      // TODO: Add ResQNet GitHub repoUrl when ready
+      repoUrl: '',
+      // TODO: Add ResQNet liveUrl/demo link when ready
+      liveUrl: '',
+      // TODO: Add ResQNet screenshot image path when ready
+      image: '',
+      code: '',
+      live: '',
     },
     {
-      id: 'p2',
-      title: 'NeuroCanvas',
-      desc: 'Multiplayer infinite collaborative canvas workspace',
-      role: 'Full-Stack Technical Lead',
-      stack: 'React, Node.js, WebSockets, Canvas API',
-      problem:
-        'Remote engineering and design teams lacked a frictionless real-time whiteboard with low latency cursor presence.',
-      result:
-        'Engineered an MVP with sub-50ms operational transform synchronization handling 100+ concurrent editors per canvas.',
-      tags: ['React', 'WebSockets', 'SaaS', 'Real-time'],
+      id: 'verity',
+      title: 'VERITY — Academic Integrity / Plagiarism Detection Engine',
+      badge: '270/270 Tests Passing',
+      desc: 'Offline-first platform analysing document similarity with exact, fuzzy and semantic signals.',
+      role: 'Full-Stack Lead',
+      stack: 'React 19, TypeScript, TanStack Start, Tailwind CSS, Node.js',
+      bullets: [
+        'Offline-first platform analysing document similarity with exact, fuzzy and semantic signals.',
+        'Faculty review workflows and student reports with role-specific access.',
+        '270/270 passing tests and a clean TypeScript check.',
+      ],
+      tags: ['React 19', 'TypeScript', 'TanStack Start', 'Tailwind CSS', 'Node.js'],
+      // TODO: Add VERITY GitHub repoUrl when ready
+      repoUrl: '',
+      // TODO: Add VERITY liveUrl when ready
+      liveUrl: '',
+      // TODO: Add VERITY screenshot image path when ready
+      image: '',
+      code: '',
       live: '',
-      code: 'https://github.com/example/neuro-canvas',
+    },
+    {
+      id: 'kaktus',
+      title: 'Kaktus — Browser-Based Hardware IDE',
+      badge: 'In Development',
+      desc: 'Browser-based IDE concept for electronics prototyping with Supabase-backed workspace and chat sync.',
+      role: 'Full-Stack Developer',
+      stack: 'React, TypeScript, Firebase Authentication, Supabase',
+      bullets: [
+        'Browser-based IDE concept for electronics prototyping.',
+        'Authentication and role-based access.',
+        'Supabase-backed workspace and chat sync with server-side authorization.',
+      ],
+      tags: ['React', 'TypeScript', 'Firebase Authentication', 'Supabase'],
+      repoUrl: 'https://github.com/AdityaGupta14-creator/final-kaktus',
+      code: 'https://github.com/AdityaGupta14-creator/final-kaktus',
+      // TODO: Add Kaktus liveUrl demo when ready
+      liveUrl: '',
+      live: '',
+      // TODO: Add Kaktus screenshot image path when ready
+      image: '',
+    },
+    {
+      id: 'q-sentinel',
+      title: 'Q-Sentinel — Quantum ML for Tuberculosis Diagnostics',
+      badge: 'Quantum ML',
+      desc: 'Hybrid quantum-classical diagnostic platform coupling variational quantum circuits with clinical biomarker workflows.',
+      role: 'Backend & ML Engineer',
+      stack: 'Python, FastAPI, PennyLane',
+      bullets: [
+        'Backend services for patient-data processing and quantum/classical ML analysis.',
+        'An 8-qubit variational quantum circuit for experimental TB risk assessment.',
+        'API workflows linking biomarkers, model outputs and advisory responses, with fallback handling when model components are unavailable.',
+      ],
+      tags: ['Python', 'FastAPI', 'PennyLane', 'Quantum ML', 'REST APIs'],
+      // TODO: Add Q-Sentinel GitHub repoUrl when ready
+      repoUrl: '',
+      // TODO: Add Q-Sentinel liveUrl demo when ready
+      liveUrl: '',
+      // TODO: Add Q-Sentinel screenshot image path when ready
+      image: '',
+      code: '',
+      live: '',
+    },
+  ],
+
+  education: [
+    {
+      degree: 'B.Tech in Electronics and Computer Science',
+      institution: 'Vidyalankar Institute of Technology, Mumbai',
+      period: 'Expected Graduation: 2029 (Second-Year Student)',
+      cgpa: '9.38 / 10.0 (First Year)',
+      details:
+        'Focus on full-stack software development, distributed systems, web architectures, and machine learning.',
+    },
+  ],
+
+  achievements: [
+    {
+      title: 'Winner — E-Cell Eureka 2026',
+      category: 'Competition',
+      badge: 'Winner',
+    },
+    {
+      title: 'Winner — AI-Prompt Night',
+      category: 'Competition',
+      badge: 'Winner',
+    },
+    {
+      title: 'Top 8 — TCS College Hackathon',
+      category: 'Hackathon',
+      badge: 'Top 8',
+    },
+    {
+      title: 'Top 30 — NeoFuture Hackathon',
+      category: 'Hackathon',
+      badge: 'Top 30',
+    },
+    {
+      title: 'Deloitte Technology Job Simulation',
+      category: 'Simulation',
+      badge: 'Completed',
+    },
+    {
+      title: 'Siemens Research Intern Job Simulation',
+      category: 'Simulation',
+      badge: 'Completed',
+    },
+    {
+      title: 'TCS Soft Skills Course (2025–26)',
+      category: 'Course',
+      badge: 'Completed',
     },
   ],
 
   experiences: [
-    // TODO: Add your past work experience timeline
     {
-      year: '2024 — PRESENT',
-      role: 'Senior Frontend & Creative Engineer',
-      company: 'NovaStack Digital Labs',
-      desc: 'Spearheaded interactive 3D product launches and migrated legacy monolith to micro-frontend architecture with zero downtime.',
+      year: '2025 — 2029',
+      role: 'B.Tech Electronics & Computer Science',
+      company: 'Vidyalankar Institute of Technology, Mumbai',
+      desc: 'Second-year undergraduate (expected graduation 2029, CGPA 9.38 first year). Builds full-stack apps with React, Next.js, Node.js, TypeScript and Python (FastAPI).',
     },
     {
-      year: '2022 — 2024',
-      role: 'Full-Stack Developer',
-      company: 'Vertex Cloud Systems',
-      desc: 'Engineered scalable React & Node.js SaaS modules and managed automated CI/CD deployment pipelines on AWS.',
-    },
-    {
-      year: '2020 — 2022',
-      role: 'UI/UX Developer',
-      company: 'Creative Synergies',
-      desc: 'Designed and developed responsive component libraries and design systems for enterprise clients.',
+      year: '2026',
+      role: 'Hackathon & Innovation Awards',
+      company: 'E-Cell Eureka 2026 & AI-Prompt Night',
+      desc: 'Winner at E-Cell Eureka 2026 (ResQNet), Winner at AI-Prompt Night, and Top 8 at TCS College Hackathon.',
     },
   ],
 };

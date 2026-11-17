@@ -1,80 +1,104 @@
 import React from 'react';
-import { Download } from 'lucide-react';
+import { Download, GraduationCap, Trophy, CheckCircle2 } from 'lucide-react';
 import { PORTFOLIO_CONTENT } from '../../data/content';
 import { useAppStore } from '../../store/useAppStore';
 
 export const ResumePanel: React.FC = () => {
-  const { experiences } = PORTFOLIO_CONTENT;
+  const { education, achievements } = PORTFOLIO_CONTENT;
   const showToast = useAppStore((s) => s.showToast);
 
   const handleDownloadCV = () => {
-    const resumeText = [
-      `${PORTFOLIO_CONTENT.personal.name.toUpperCase()} — ${PORTFOLIO_CONTENT.personal.role.toUpperCase()}`,
-      '=======================================================',
-      `Location: Brownstone Avenue Portfolio • ${PORTFOLIO_CONTENT.socials.email}`,
-      '',
-      'EXPERIENCE:',
-      ...PORTFOLIO_CONTENT.experiences.map(
-        (exp) => `• ${exp.role} @ ${exp.company} (${exp.year})\n  ${exp.desc}`
-      ),
-      '',
-      'CORE SKILLS:',
-      PORTFOLIO_CONTENT.skills.flatMap((s) => s.skills).join(', '),
-      '',
-      'EDUCATION:',
-      'B.Tech in Computer Science & Engineering',
-    ].join('\n');
-
-    const blob = new Blob([resumeText], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Aditya_Gupta_Resume.txt';
+    a.href = '/Aditya_Gupta.pdf';
+    a.download = 'Aditya_Gupta.pdf';
+    a.target = '_blank';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('Downloaded Aditya_Gupta_Resume.txt 📄');
+    showToast('Downloading Aditya_Gupta.pdf 📄');
   };
 
   return (
-    <div>
+    <div className="space-y-8">
       {/* CV Download Header Card */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-800/80 border border-slate-700 p-5 rounded-xl mb-8 shadow-lg">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-800/80 border border-slate-700 p-5 rounded-xl shadow-lg">
         <div>
-          <h4 className="font-bold text-white text-sm">Curriculum Vitae</h4>
-          <p className="text-xs text-slate-400 mt-1">Download complete software engineering resume</p>
+          <h4 className="font-bold text-white text-base">Curriculum Vitae</h4>
+          <p className="text-xs text-slate-300 mt-1">
+            Aditya_Gupta.pdf • Software Developer Resume (Open to internships)
+          </p>
         </div>
         <button
           onClick={handleDownloadCV}
-          className="px-4 py-2 rounded-lg font-bold text-sm transition flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-slate-900 shadow-md"
+          className="px-5 py-2.5 rounded-xl font-bold text-sm transition flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-slate-900 shadow-md cursor-pointer shrink-0"
         >
           <Download className="w-4 h-4" />
           <span>Download CV</span>
         </button>
       </div>
 
-      {/* Experience Timeline */}
-      <div className="space-y-8 relative before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-700 pl-8">
-        {experiences.map((exp, i) => (
-          <div key={i} className="relative">
-            <span
-              className={`w-3 h-3 rounded-full absolute -left-[37px] top-1.5 ring-4 ring-slate-900 z-10 ${
-                i === 0 ? 'bg-amber-400' : 'bg-slate-600'
-              }`}
-            />
+      {/* Education Section */}
+      <div>
+        <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-4 flex items-center gap-2">
+          <GraduationCap className="w-4 h-4 text-amber-400" />
+          <span>Education</span>
+        </h4>
+
+        <div className="space-y-4">
+          {education.map((edu, idx) => (
             <div
-              className={`text-xs font-bold mb-1 tracking-widest uppercase ${
-                i === 0 ? 'text-amber-400' : 'text-slate-400'
-              }`}
+              key={idx}
+              className="p-5 rounded-xl bg-slate-800/60 border border-slate-700 hover:border-amber-400/40 transition shadow-md"
             >
-              {exp.year}
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                <h5 className="font-display font-bold text-lg text-white">
+                  {edu.degree}
+                </h5>
+                <span className="text-xs font-mono font-bold text-amber-400 px-2.5 py-0.5 rounded-full bg-amber-400/10 border border-amber-400/30">
+                  CGPA {edu.cgpa}
+                </span>
+              </div>
+              <div className="text-sm font-semibold text-slate-300 mb-2">
+                {edu.institution}
+              </div>
+              <div className="text-xs text-slate-400 font-mono mb-2">
+                {edu.period}
+              </div>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                {edu.details}
+              </p>
             </div>
-            <h4 className="font-display font-bold text-white text-lg">{exp.role}</h4>
-            <div className="text-sm font-semibold text-slate-400 mb-2">{exp.company}</div>
-            <p className="text-sm text-slate-300 leading-relaxed">{exp.desc}</p>
-          </div>
-        ))}
+          ))}
+        </div>
+      </div>
+
+      {/* Achievements & Simulations Section */}
+      <div>
+        <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-4 flex items-center gap-2">
+          <Trophy className="w-4 h-4 text-amber-400" />
+          <span>Key Achievements &amp; Professional Certifications</span>
+        </h4>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {achievements.map((item, idx) => (
+            <div
+              key={idx}
+              className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700 flex items-start gap-3 hover:border-amber-400/30 transition shadow-sm"
+            >
+              <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <div className="text-xs sm:text-sm font-semibold text-white leading-snug">
+                  {item.title}
+                </div>
+                {item.badge && (
+                  <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-amber-300">
+                    {item.badge}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
