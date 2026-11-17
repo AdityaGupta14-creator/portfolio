@@ -69,7 +69,18 @@ export interface BuildingMeta {
   xPos: number; // Street X coordinate in 3D scene
 }
 
+export interface HeroContent {
+  headlinePrefix: string;
+  headlineHighlight: string;
+  subline: string;
+  supporting: string;
+  primaryButtonText: string;
+  secondaryLinkText: string;
+  scrollHintText: string;
+}
+
 export interface PortfolioContent {
+  hero: HeroContent;
   personal: {
     name: string;
     tagline: string;
@@ -92,11 +103,20 @@ export interface PortfolioContent {
 }
 
 export const PORTFOLIO_CONTENT: PortfolioContent = {
+  hero: {
+    headlinePrefix: 'I build software that shows up when it ',
+    headlineHighlight: 'matters.',
+    subline: 'Aditya Gupta · Full-Stack Developer · B.Tech Electronics & Computer Science',
+    supporting: "Winner of E-Cell Eureka 2026. Walk down my street to see what I've built.",
+    primaryButtonText: 'Walk the street',
+    secondaryLinkText: 'Skip to projects',
+    scrollHintText: 'Scroll to enter the street',
+  },
   personal: {
     name: 'Aditya Gupta',
-    role: 'Software Developer | Full-Stack Development',
+    role: 'Full-Stack Developer',
     tagline: 'Second-year B.Tech ECS Student • Open to internships',
-    subline: 'Software Developer | Full-Stack Development • Open to internships',
+    subline: 'Aditya Gupta · Full-Stack Developer · B.Tech Electronics & Computer Science',
     statusTag: 'Open to internships',
     bioIntro:
       'Second-year B.Tech Electronics and Computer Science student at Vidyalankar Institute of Technology, Mumbai (expected graduation 2029, CGPA 9.38 first year).',
