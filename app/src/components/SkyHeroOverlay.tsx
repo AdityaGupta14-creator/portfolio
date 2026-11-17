@@ -113,14 +113,14 @@ export const SkyHeroOverlay: React.FC = () => {
             )}
           </div>
 
-          {/* Center Hero Content with soft dark gradient scrim */}
+          {/* Center Hero Content with soft dark gradient scrim (feathered radial gradient, no hard box edges) */}
           <div className="relative flex flex-col items-center max-w-3xl my-auto px-4 py-6 w-full">
-            {/* Soft dark radial gradient scrim behind the text block (feathered edges, no hard box) */}
+            {/* Pure radial gradient scrim feathered completely to 0 opacity without rectangular backdrop-blur edges */}
             <div
-              className="absolute -inset-4 sm:-inset-10 rounded-[48px] bg-slate-950/50 backdrop-blur-[2px] pointer-events-none -z-10"
+              className="absolute -inset-x-20 sm:-inset-x-44 -inset-y-24 sm:-inset-y-36 pointer-events-none -z-10"
               style={{
-                maskImage: 'radial-gradient(ellipse 70% 70% at center, black 35%, transparent 85%)',
-                WebkitMaskImage: 'radial-gradient(ellipse 70% 70% at center, black 35%, transparent 85%)',
+                background:
+                  'radial-gradient(ellipse 65% 55% at 50% 50%, rgba(2, 6, 23, 0.72) 0%, rgba(2, 6, 23, 0.45) 45%, rgba(2, 6, 23, 0.15) 75%, rgba(2, 6, 23, 0) 100%)',
               }}
               aria-hidden="true"
             />
@@ -183,10 +183,10 @@ export const SkyHeroOverlay: React.FC = () => {
                 <ArrowDown className="w-4 h-4 animate-bounce" />
               </button>
 
-              {/* Secondary Link: Skip to projects (at least 44px tall touch target, visible text with underline on hover) */}
+              {/* Secondary Link: Skip to projects (at least 44px tall touch target, clearly visible text link with underline on hover) */}
               <button
                 onClick={() => focusBuilding(2)}
-                className="w-full sm:w-auto min-h-[44px] px-4 py-2 rounded-xl text-white hover:text-amber-300 font-semibold text-sm sm:text-base flex items-center justify-center gap-2 transition underline underline-offset-4 decoration-white/50 hover:decoration-amber-300 cursor-pointer drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]"
+                className="w-full sm:w-auto min-h-[44px] px-4 py-2 rounded-xl text-white hover:text-amber-300 font-semibold text-sm sm:text-base flex items-center justify-center gap-2 transition hover:underline underline-offset-4 decoration-amber-300 cursor-pointer drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]"
               >
                 <Compass className="w-4 h-4 text-amber-400" />
                 <span>{PORTFOLIO_CONTENT.hero.secondaryLinkText}</span>
