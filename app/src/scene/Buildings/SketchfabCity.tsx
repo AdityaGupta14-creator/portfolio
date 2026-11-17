@@ -85,31 +85,47 @@ export const SketchfabCity: React.FC = () => {
   // Material cache to prevent recreating cloned materials every render
   const materialCache = useRef<Map<string, THREE.MeshStandardMaterial>>(new Map());
 
-  const createBuildingClone = (wrapper: THREE.Group | null, tint: string) => {
-    if (!wrapper) return null;
-    const clone = wrapper.clone(true);
-    clone.traverse((o) => {
-      if (o instanceof THREE.Mesh && o.material) {
-        const origMat = o.material as THREE.MeshStandardMaterial;
-        const cacheKey = `${origMat.uuid}_${tint}`;
-        if (!materialCache.current.has(cacheKey)) {
-          const mat = origMat.clone();
-          if (mat.map) {
-            mat.map.colorSpace = THREE.SRGBColorSpace;
+  // Memoize all building groups once when rawB1 and rawB2 are ready to eliminate re-cloning on hover/focus
+  const buildingGroups = useMemo(() => {
+    return allBuildings.map((b) => {
+      const raw = b.variant === 1 ? rawB1 : rawB2;
+      const clone = raw.clone(true);
+      clone.traverse((o) => {
+        if (o instanceof THREE.Mesh && o.material) {
+          const origMat = o.material as THREE.MeshStandardMaterial;
+          const cacheKey = `${origMat.uuid}_${b.tintColor}`;
+          if (!materialCache.current.has(cacheKey)) {
+            const mat = origMat.clone();
+            if (mat.map) {
+              mat.map.colorSpace = THREE.SRGBColorSpace;
+            }
+            mat.roughness = CITY_CONFIG.ROUGHNESS;
+            mat.metalness = CITY_CONFIG.METALNESS;
+            mat.toneMapped = true;
+            mat.color.set(b.tintColor);
+            materialCache.current.set(cacheKey, mat);
           }
-          mat.roughness = CITY_CONFIG.ROUGHNESS;
-          mat.metalness = CITY_CONFIG.METALNESS;
-          mat.toneMapped = true;
-          mat.color.set(tint);
-          materialCache.current.set(cacheKey, mat);
+          o.material = materialCache.current.get(cacheKey)!;
+          // Hero buildings cast shadow; background buildings receive shadow only
+          const isHero = ['101', '103', '105', '107', '109'].includes(b.id);
+          o.castShadow = isHero;
+          o.receiveShadow = true;
         }
-        o.material = materialCache.current.get(cacheKey)!;
-        o.castShadow = true;
-        o.receiveShadow = true;
-      }
+        o.matrixAutoUpdate = false;
+        o.updateMatrix();
+      });
+
+      const group = new THREE.Group();
+      group.name = `BuildingGroup_${b.id}`;
+      group.position.set(...b.position);
+      group.rotation.set(0, b.rotationY, 0);
+      group.scale.set(CITY_CONFIG.SCALE, CITY_CONFIG.SCALE, CITY_CONFIG.SCALE);
+      group.matrixAutoUpdate = false;
+      group.updateMatrix();
+      group.add(clone);
+      return { id: b.id, group };
     });
-    return clone;
-  };
+  }, [allBuildings, rawB1, rawB2]);
 
   return (
     <group name="SketchfabCity">
@@ -122,23 +138,10 @@ export const SketchfabCity: React.FC = () => {
       {/* 3. Authentic 3D Storefront Signs, Awnings, and Vintage Lamps for 5 Hero Buildings */}
       <StorefrontSignsAndAwnings />
 
-      {/* 4. Two facing rows of continuous Chicago brownstone buildings */}
-      {allBuildings.map((b) => {
-        const raw = b.variant === 1 ? rawB1 : rawB2;
-        const buildingMesh = createBuildingClone(raw, b.tintColor);
-        if (!buildingMesh) return null;
-
-        return (
-          <group
-            key={b.id}
-            position={b.position}
-            rotation={[0, b.rotationY, 0]}
-            scale={[CITY_CONFIG.SCALE, CITY_CONFIG.SCALE, CITY_CONFIG.SCALE]}
-          >
-            <primitive object={buildingMesh} />
-          </group>
-        );
-      })}
+      {/* 4. Two facing rows of continuous Chicago brownstone buildings (Pre-cloned & static) */}
+      {buildingGroups.map(({ id, group }) => (
+        <primitive key={id} object={group} />
+      ))}
 
       {/* 4. 5 Invisible Click-Proxy Boxes with Hover Glow & Floating Street Labels */}
       {BUILDING_PROXIES.map((proxy) => {

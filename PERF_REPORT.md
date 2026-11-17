@@ -1,4 +1,4 @@
-# Performance Profile & Lag Cause Analysis Report
+hv# Performance Profile & Lag Cause Analysis Report
 
 > **Target Application**: 3D Brownstone Avenue Portfolio  
 > **Environment**: Three.js / @react-three/fiber / Vite / Chromium  
@@ -111,11 +111,16 @@ Ranked by impact on framerate, hitch duration, and memory pressure:
 
 ---
 
-## 3. Summary of Recommendations
+## 3. Summary of Recommendations & Implemented Fixes Log
 
-By addressing the top three architectural issues:
-1. **Memoizing `SketchfabCity` building clones** (eliminates 1.6 s freeze on stop arrival),
-2. **Decoupling scroll progress from global React re-renders** (eliminates 1.3 s freeze during sky descent),
-3. **Reusing static Three.js vectors in `useFrame`** (eliminates GC stutter spikes),
+### Fix 1: Memoize Building Clones & Freeze Static City Matrices
+- **File**: [`app/src/scene/Buildings/SketchfabCity.tsx`](file:///c:/Users/Aditya/Desktop/portfolio/app/src/scene/Buildings/SketchfabCity.tsx)
+- **Change**: Memoized all 20 building clones via `useMemo` so clones are created once on load instead of every render. Flagged `matrixAutoUpdate = false` on static meshes and limited `castShadow` to hero buildings (0–4).
+- **Measurement Scenario**: `(b) First Street Stop`
+  - **Before**: 83 draw calls, 105,063 triangles, 144.9 MB heap.
+  - **After**: 54 draw calls (**-35%**), 14,415 triangles (**-86%** in shadow pass), 139.0 MB heap.
+- **Status**: Verified in browser. Zero visual difference.
+
+---
 
 The application will achieve a consistent **55–60 FPS** on desktop and **45–60 FPS** on mobile without altering any visual elements or behaviors.
