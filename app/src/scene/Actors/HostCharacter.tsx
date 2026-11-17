@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
+import { Html } from '@react-three/drei';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { useAppStore } from '../../store/useAppStore';
 import { BUILDING_PROXIES, RAW_BOUNDS } from '../../data/buildings';
@@ -126,11 +127,20 @@ export const HostCharacter: React.FC = () => {
   const rootRef = useRef<THREE.Group>(null);
   const scrollProgress = useAppStore((s) => s.scrollProgress);
   const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
+  const skipAnimation = useAppStore((s) => s.skipAnimation);
+  const navJumpTimestamp = useAppStore((s) => s.navJumpTimestamp);
+  const cancelWalkTimestamp = useAppStore((s) => s.cancelWalkTimestamp);
+  const cancelHostWalk = useAppStore((s) => s.cancelHostWalk);
   const showToast = useAppStore((s) => s.showToast);
   const { camera } = useThree();
 
   const [avatarGroup, setAvatarGroup] = useState<THREE.Group | null>(null);
   const [loadError, setLoadError] = useState<boolean>(false);
+
+  // Visual cues refs: Pulsing ground ring and Distance-fading Name Tag
+  const groundRingRef = useRef<THREE.Mesh>(null);
+  const ringMatRef = useRef<THREE.MeshBasicMaterial>(null);
+  const nameTagRef = useRef<HTMLDivElement>(null);
 
   // Animation & state refs
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
@@ -185,6 +195,60 @@ export const HostCharacter: React.FC = () => {
     crossfadeToAction(waveAction, CROSSFADE_DURATION);
   };
 
+  // Immediate walk cancellation & stop snap
+  const cancelCurrentWalk = () => {
+    const targetStop = finalStopTarget.current;
+    currentPos.current.copy(targetStop);
+    activeWaypointTarget.current.copy(targetStop);
+    if (rootRef.current) {
+      rootRef.current.position.copy(currentPos.current);
+    }
+    playWaveOnce();
+  };
+
+  // Listen for nav jumps or manual walk cancellations
+  const lastNavJump = useRef(navJumpTimestamp);
+  const lastCancelWalk = useRef(cancelWalkTimestamp);
+
+  useEffect(() => {
+    if (navJumpTimestamp !== lastNavJump.current) {
+      lastNavJump.current = navJumpTimestamp;
+      cancelCurrentWalk();
+    }
+  }, [navJumpTimestamp]);
+
+  useEffect(() => {
+    if (cancelWalkTimestamp !== lastCancelWalk.current) {
+      lastCancelWalk.current = cancelWalkTimestamp;
+      cancelCurrentWalk();
+    }
+  }, [cancelWalkTimestamp]);
+
+  // Keyboard shortcut listener: Space or Esc cancels current walking animation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.code === 'Space' || e.key === ' ' || e.key === 'Escape') {
+        if (hostStateRef.current === 'WALKING') {
+          if (e.code === 'Space' || e.key === ' ') {
+            e.preventDefault();
+          }
+          cancelHostWalk();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cancelHostWalk]);
+
   const handleWaveClick = () => {
     playWaveOnce();
     showToast("Aditya waves hi! 👋 Pick any of the 5 buildings to explore together!");
@@ -226,10 +290,10 @@ export const HostCharacter: React.FC = () => {
       .then(([walkingFbx, wavingFbx, idleFbx]) => {
         if (!isMounted) return;
 
-        // Measure raw model height & scale precisely to 1.75m tall
+        // Measure raw model height & scale to 1.88m tall (~1.074x scale, strictly <= 1.1x)
         const rawBox = new THREE.Box3().setFromObject(walkingFbx);
         const rawHeight = rawBox.max.y - rawBox.min.y;
-        const targetHeight = 1.75;
+        const targetHeight = 1.88;
         const scaleFactor = targetHeight / (rawHeight || 179.27);
         walkingFbx.scale.setScalar(scaleFactor);
 
@@ -363,6 +427,29 @@ export const HostCharacter: React.FC = () => {
         scrollProgress,
         focusedBuildingIndex,
       };
+      (window as any).__HOST_POS__ = currentPos.current;
+      (window as any).__HOST_STATE__ = hostStateRef.current;
+    }
+
+    // Visual cues dynamic updates:
+    // 1. Soft pulsing ground ring under the host (warm amber, subtle, depthWrite: false)
+    if (ringMatRef.current && groundRingRef.current) {
+      const t = performance.now() * 0.003;
+      const pulse = Math.sin(t);
+      ringMatRef.current.opacity = 0.42 + 0.22 * pulse;
+      groundRingRef.current.scale.setScalar(1.0 + 0.05 * pulse);
+    }
+
+    // 2. Small name tag / marker above host that stays readable at distance and fades when camera is close
+    if (nameTagRef.current) {
+      const distToCam = camera.position.distanceTo(currentPos.current);
+      // Fades when camera is close (< 4.8m) or in focus mode, readable at distance (> 6m)
+      let tagOpacity = THREE.MathUtils.clamp((distToCam - 4.8) / 1.5, 0, 1);
+      if (focusedBuildingIndex !== null) {
+        tagOpacity = 0;
+      }
+      nameTagRef.current.style.opacity = tagOpacity.toFixed(3);
+      nameTagRef.current.style.display = tagOpacity < 0.01 ? 'none' : 'flex';
     }
 
     if (!avatarGroup || !rootRef.current) return;
@@ -421,6 +508,15 @@ export const HostCharacter: React.FC = () => {
     const distToFinal = Math.hypot(finalDx, finalDz);
 
     const hasReachedStop = distToFinal <= STOP_DISTANCE_THRESHOLD;
+
+    // Instant skip check: when skipAnimation is on, all stops jump instantly (no auto-walk)
+    if (skipAnimation && !hasReachedStop) {
+      currentPos.current.copy(finalStopTarget.current);
+      activeWaypointTarget.current.copy(finalStopTarget.current);
+      rootRef.current.position.copy(currentPos.current);
+      playWaveOnce();
+      return;
+    }
 
     // 4. State Machine: WALKING vs. WAVING vs. STANDING
     if (!hasReachedStop) {
@@ -518,22 +614,46 @@ export const HostCharacter: React.FC = () => {
           {/* Scaled FBX Mesh Object */}
           <primitive object={avatarGroup} />
 
-          {/* Interactive Ground Contact Glow Ring */}
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-            <ringGeometry args={[0.55, 0.72, 32]} />
-            <meshBasicMaterial color={0xfbbf24} side={THREE.DoubleSide} transparent opacity={0.55} />
+          {/* Soft Pulsing Ground Ring (flat ring mesh, warm amber, subtle, depthWrite: false) */}
+          <mesh ref={groundRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+            <ringGeometry args={[0.55, 0.80, 48]} />
+            <meshBasicMaterial
+              ref={ringMatRef}
+              color="#f59e0b"
+              side={THREE.DoubleSide}
+              transparent
+              opacity={0.52}
+              depthWrite={false}
+            />
           </mesh>
 
           {/* Soft Ground Contact Shadow Disc */}
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-            <ringGeometry args={[0.02, 0.48, 32]} />
+            <ringGeometry args={[0.02, 0.50, 32]} />
             <meshBasicMaterial color="#000000" transparent opacity={0.35} depthWrite={false} />
           </mesh>
         </group>
       )}
 
-      {/* 3D Speech Bubble anchored directly above host's head (head height ~ 1.75m) */}
-      <SpeechBubble position={[0, 2.05, 0]} onWaveClick={handleWaveClick} />
+      {/* Small Name Tag / Marker Above Host (readable at distance, fades when camera is close) */}
+      <group position={[0, 2.22, 0]}>
+        <Html center distanceFactor={14} zIndexRange={[20, 0]}>
+          <div
+            ref={nameTagRef}
+            className="pointer-events-none select-none transition-opacity duration-150 flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900/85 backdrop-blur-md border border-amber-400/50 shadow-xl text-white"
+            style={{ opacity: 1 }}
+          >
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+            <span className="font-display font-bold text-xs tracking-wide">Aditya</span>
+            <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 tracking-wider">
+              Host
+            </span>
+          </div>
+        </Html>
+      </group>
+
+      {/* 3D Speech Bubble anchored directly above host's head (at Hub overview) */}
+      <SpeechBubble position={[0, 2.15, 0]} onWaveClick={handleWaveClick} />
     </group>
   );
 };

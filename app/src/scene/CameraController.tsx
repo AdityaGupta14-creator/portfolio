@@ -50,14 +50,15 @@ function computeKeyframes(): Keyframe[] {
   ];
 
   // Tour stops: computed dynamically from building proxies & bounding boxes
+  // Stop camera is framed closer (Z = -4.8, distance to facade is 8.6m, well over safe clearance)
+  // framing the host (at X = proxy.xPos - 1.8, Z = -10.0) and building entrance together
   const stopProgress = [0.28, 0.44, 0.58, 0.72, 0.86];
   BUILDING_PROXIES.forEach((proxy, idx) => {
-    // Street corridor is at Z = -0.8. Safe distance from facade at -13.4 is 12.6m (> 4m safe clearance)
-    const camZ = -0.8;
+    const camZ = -4.8;
     frames.push({
       p: stopProgress[idx],
-      pos: new THREE.Vector3(proxy.xPos, EYE_HEIGHT, camZ),
-      look: new THREE.Vector3(proxy.xPos, EYE_HEIGHT + 0.35, proxy.zPos),
+      pos: new THREE.Vector3(proxy.xPos - 0.6, EYE_HEIGHT, camZ),
+      look: new THREE.Vector3(proxy.xPos - 0.8, EYE_HEIGHT + 0.15, -12.0),
       name: `Building ${proxy.number} (${proxy.name})`,
     });
   });
@@ -94,6 +95,8 @@ export const CameraController: React.FC = () => {
   const focusedBuildingIndex = useAppStore((s) => s.focusedBuildingIndex);
   const closeBuildingModal = useAppStore((s) => s.closeBuildingModal);
   const isTopDownDebug = useAppStore((s) => s.isTopDownDebug);
+  const navJumpTimestamp = useAppStore((s) => s.navJumpTimestamp);
+  const skipAnimation = useAppStore((s) => s.skipAnimation);
 
   const keyframes = useMemo(() => STATIC_KEYFRAMES, []);
 
@@ -106,6 +109,16 @@ export const CameraController: React.FC = () => {
   const mouseParallaxY = useRef(0);
   const lastFocusScrollProgress = useRef(0);
   const isFirstCamFrame = useRef(true);
+  const quickEaseEndTime = useRef<number>(0);
+  const lastNavJump = useRef(navJumpTimestamp);
+
+  // Monitor quick nav jump triggers to apply quick ease (~0.6s)
+  useEffect(() => {
+    if (navJumpTimestamp !== lastNavJump.current) {
+      lastNavJump.current = navJumpTimestamp;
+      quickEaseEndTime.current = performance.now() + 650;
+    }
+  }, [navJumpTimestamp]);
 
   // Proximity warning state (dev-only: warns if camera within 3m of any mesh)
   const lastProximityWarnTime = useRef(0);
@@ -206,11 +219,35 @@ export const CameraController: React.FC = () => {
     if (focusedBuildingIndex !== null) {
       const b = PORTFOLIO_CONTENT.buildings[focusedBuildingIndex];
       const isMobile = window.innerWidth < 640;
-      // Focus mode stays safely in street corridor (Z = -0.8, >= 12.6m from facade)
-      targetCamPos.current.set(b.xPos + (isMobile ? 0 : 3.5), EYE_HEIGHT + 0.2, RAW_BOUNDS.streetCenterZ);
-      targetLookAt.current.set(b.xPos, EYE_HEIGHT + 0.35, RAW_BOUNDS.northRowZ);
+      // Closer framing: frames host (at X = b.xPos - 1.8) and building together
+      targetCamPos.current.set(b.xPos - (isMobile ? 0.6 : 0.8), EYE_HEIGHT, -4.8);
+      targetLookAt.current.set(b.xPos - (isMobile ? 0.8 : 1.2), EYE_HEIGHT + 0.15, -12.0);
     } else {
       computeScrollCamera(scrollProgress);
+
+      // Gentle follow camera between stops:
+      // When host is in the street tour (0.24 <= scrollProgress <= 0.88),
+      // keep the host in frame (about 6-8 m behind and slightly to the side)
+      if (scrollProgress >= 0.24 && scrollProgress <= 0.88) {
+        const hostDebug = typeof window !== 'undefined' ? (window as any).__HOST_DEBUG__ : null;
+        if (hostDebug && hostDebug.currentPos && hostDebug.activeTarget) {
+          const hX = hostDebug.currentPos[0];
+          const tX = hostDebug.activeTarget[0];
+          const isWalking = hostDebug.state === 'WALKING';
+          const dx = tX - hX;
+
+          if (isWalking || Math.abs(dx) > 0.8) {
+            // Host is walking along the north sidewalk (Z ~ -10.0)
+            // Camera positioned 6-8m behind along movement direction and to the side (Z = -4.8)
+            const behindOffsetX = dx >= 0 ? -4.5 : 4.5;
+            const followX = hX + behindOffsetX;
+            const lookAheadX = hX + (dx >= 0 ? 1.2 : -1.2);
+
+            targetCamPos.current.set(followX, EYE_HEIGHT, -4.8);
+            targetLookAt.current.set(lookAheadX, EYE_HEIGHT + 0.12, -9.8);
+          }
+        }
+      }
     }
 
     const desiredPos = targetCamPos.current.clone();
@@ -224,7 +261,9 @@ export const CameraController: React.FC = () => {
       isFirstCamFrame.current = false;
     } else {
       const dt = Math.min(delta, 0.1);
-      const alpha = 1.0 - Math.exp(-8.0 * dt);
+      const isQuickEase = performance.now() < quickEaseEndTime.current;
+      const lerpRate = isQuickEase ? 12.0 : skipAnimation ? 18.0 : 8.0;
+      const alpha = 1.0 - Math.exp(-lerpRate * dt);
       currentCamPos.current.lerp(desiredPos, alpha);
       currentLookAt.current.lerp(targetLookAt.current, alpha);
     }
@@ -269,13 +308,14 @@ export const CameraController: React.FC = () => {
       scene.traverse((obj) => {
         if ((obj as THREE.Mesh).isMesh && obj.visible) {
           const mesh = obj as THREE.Mesh;
-          // Ignore camera line helpers, sky, and infinite ground
+          // Ignore camera line helpers, sky, infinite ground, and ground/road surfaces below eye level
           if (mesh.name === 'cam-debug' || mesh.name === 'sky' || mesh.name === 'ground-infinite') return;
           if (!mesh.geometry) return;
 
           if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
           if (mesh.geometry.boundingBox) {
             tempBox.current.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
+            if (tempBox.current.max.y <= 0.25) return; // Ignore roadway asphalt and ground plane beneath camera
             const dist = tempBox.current.distanceToPoint(camera.position);
             if (dist < closestDist) {
               closestDist = dist;

@@ -36,6 +36,14 @@ export interface AppState {
   isDebugMode: boolean;
   toggleDebugMode: () => void;
 
+  // Tour Usability & Animation Skip
+  skipAnimation: boolean;
+  setSkipAnimation: (skip: boolean) => void;
+  toggleSkipAnimation: () => void;
+  navJumpTimestamp: number;
+  cancelWalkTimestamp: number;
+  cancelHostWalk: () => void;
+
   // Dev-only Top-Down Debug View (Press B)
   isTopDownDebug: boolean;
   toggleTopDownDebug: () => void;
@@ -146,6 +154,23 @@ const getInitialSkyMode = (): SkyMode => {
   return getLocalTimeDefaultMode();
 };
 
+const getInitialSkipAnimation = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const saved = localStorage.getItem('portfolioSkipAnimation');
+    if (saved !== null) {
+      return JSON.parse(saved) === true;
+    }
+  } catch (e) {
+    // ignore
+  }
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch (e) {
+    return false;
+  }
+};
+
 const initialSkyMode = getInitialSkyMode();
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -232,6 +257,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
   },
 
+  // Tour Usability & Skip Animation
+  skipAnimation: getInitialSkipAnimation(),
+  setSkipAnimation: (skip: boolean) => {
+    try {
+      localStorage.setItem('portfolioSkipAnimation', JSON.stringify(skip));
+    } catch (e) {
+      // ignore
+    }
+    set({ skipAnimation: skip });
+    get().showToast(skip ? '⚡ Skip animation: ON (Instant stop jumps)' : '🚶 Walking animation: ON');
+  },
+  toggleSkipAnimation: () => {
+    get().setSkipAnimation(!get().skipAnimation);
+  },
+  navJumpTimestamp: 0,
+  cancelWalkTimestamp: 0,
+  cancelHostWalk: () => {
+    set({ cancelWalkTimestamp: Date.now() });
+    get().showToast('Walk cancelled (Space / Esc)');
+  },
+
   // Dev-only Top-Down Debug View (Press B)
   isTopDownDebug:
     typeof window !== 'undefined'
@@ -285,12 +331,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   tourStep: getInitialFocusedBuilding() ?? 0,
   focusedBuildingIndex: getInitialFocusedBuilding(),
   focusBuilding: (index: number) => {
+    const stopProgress = [0.28, 0.44, 0.58, 0.72, 0.86];
+    const targetP = stopProgress[index] ?? 0.28;
+    if (typeof window !== 'undefined') {
+      const track = document.getElementById('scroll-track');
+      if (track) {
+        const maxScroll = track.offsetHeight - window.innerHeight;
+        window.scrollTo({ top: maxScroll * targetP });
+      }
+    }
     set({
       currentBuilding: index,
       focusedBuildingIndex: index,
       tourStep: index,
+      scrollProgress: targetP,
       selectedProjectId: null,
       isMobileMenuOpen: false,
+      navJumpTimestamp: Date.now(),
     });
   },
   closeBuildingModal: (scrollToOverview = false) => {
